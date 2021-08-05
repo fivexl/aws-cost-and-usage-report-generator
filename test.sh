@@ -2,5 +2,5 @@
 
 set -ex
 
-flake8 *.py
 pylint -E *.py
+flake8 *.py

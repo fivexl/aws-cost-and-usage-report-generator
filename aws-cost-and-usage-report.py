@@ -24,8 +24,10 @@ if args.debug:
 
 report_file_name = args.out
 sensetivity = args.sensetivity
-start = (datetime.date.today() - relativedelta(months=+3)).replace(day=1) #1st day of month 3 months ago
-end = datetime.date.today().replace(day=1) #- 1 # the last day of the last month
+# 1st day of month 3 months ago
+start = (datetime.date.today() - relativedelta(months=+3)).replace(day=1)
+# the first day of the current month
+end = datetime.date.today().replace(day=1)
 sts = boto3.client('sts')
 account_id = sts.get_caller_identity().get('Account')
 user_id = sts.get_caller_identity().get('Arn').split(':')[-1]
@@ -45,10 +47,10 @@ while True:
     else:
         kwargs = {}
     data = cd.get_cost_and_usage(
-        TimePeriod = {'Start': str(start), 'End':  str(end)},
-        Granularity = 'MONTHLY',
-        Metrics = ['UnblendedCost'],
-        GroupBy = [{'Type': 'DIMENSION', 'Key': 'SERVICE'}],
+        TimePeriod={'Start': str(start), 'End':  str(end)},
+        Granularity='MONTHLY',
+        Metrics=['UnblendedCost'],
+        GroupBy=[{'Type': 'DIMENSION', 'Key': 'SERVICE'}],
         **kwargs)
     results += data['ResultsByTime']
     token = data.get('NextPageToken')
@@ -68,7 +70,7 @@ column_names = ['Service']
 #   'Groups': [
 #     {'Keys': ['AWS Backup'], 'Metrics': {'UnblendedCost': {'Amount': '0.6320089524', 'Unit': 'USD'}}},
 #     {'Keys': ['AWS CloudTrail'], 'Metrics': {'UnblendedCost': {'Amount': '36.566997', 'Unit': 'USD'}}},
-#     {'Keys': ['AWS Config'], 'Metrics': {'UnblendedCost': {'Amount': '238.304', 'Unit': 'USD'}}}, 
+#     {'Keys': ['AWS Config'], 'Metrics': {'UnblendedCost': {'Amount': '238.304', 'Unit': 'USD'}}},
 #     {'Keys': ['AWS Database Migration Service'], 'Metrics': {'UnblendedCost': {'Amount': '26.676219876', 'Unit': 'USD'}}}
 # Above might change if query parameters are altered
 for month in results:
@@ -79,7 +81,7 @@ for month in results:
             rows[service_name] = [service_name]
         rows[service_name].append(float(service['Metrics']['UnblendedCost']['Amount']))
 
-df = pandas.DataFrame(rows.values(), columns = column_names)
+df = pandas.DataFrame(rows.values(), columns=column_names)
 df.fillna(value=0, inplace=True)
 df = df.round(2)
 
@@ -125,19 +127,23 @@ normalized_cost_start_column_letter = chr(ord('@') + normalized_cost_start_colum
 normalized_cost_end_column_letter = chr(ord('@') + normalized_cost_start_column_number + len(column_names) - 1)
 comments_column_letter = chr(ord('@') + normalized_cost_start_column_number + len(column_names))
 suggestions_column_letter = chr(ord('@') + normalized_cost_start_column_number + len(column_names) + 1)
-with pandas.ExcelWriter(report_file_name, engine='xlsxwriter') as writer:  
+# E0110: Abstract class 'ExcelWriter' with abstract methods instantiated (abstract-class-instantiated)
+# pylint: disable=E0110
+with pandas.ExcelWriter(report_file_name, engine='xlsxwriter') as writer:
     df.to_excel(writer,
                 sheet_name=worksheet_name,
                 startrow=table_row_number,
                 startcol=0,
-                index=False)   
+                index=False)
     normalized_df.loc[:, df.columns != 'Service'].to_excel(writer,
                                                            sheet_name=worksheet_name,
                                                            startrow=table_row_number,
                                                            startcol=normalized_cost_start_column_number,
                                                            index=False)
 
-    workbook  = writer.book
+    # E1101: Instance of 'ExcelWriter' has no 'book' member (no-member)
+    # pylint: disable=E1101
+    workbook = writer.book
     worksheet = writer.sheets[worksheet_name]
     merged_cell_format = workbook.add_format()
     merged_cell_format.set_text_wrap()
@@ -151,38 +157,53 @@ with pandas.ExcelWriter(report_file_name, engine='xlsxwriter') as writer:
     worksheet.merge_range(5, 0, 5, 3, 'Montly unblended cost per service', merged_cell_format)
     worksheet.merge_range(5, 5, 5, 7, 'Normalized values by number of days in the given month', merged_cell_format)
     worksheet.set_row(5, 30)
-    worksheet.write('A3', 'Sensitivity')
+    worksheet.write('A3', 'Sensetivity')
     worksheet.write(sensetivity_value_cell, sensetivity)
     worksheet.write(f'{comments_column_letter}{table_row_number + 1}', 'Comments', merged_cell_format)
     worksheet.write(f'{suggestions_column_letter}{table_row_number + 1}', 'Suggestions', merged_cell_format)
-
 
     red_background = workbook.add_format({'bg_color': '#FFC7CE', 'font_color': '#000000'})
     green_background = workbook.add_format({'bg_color': '#C6EFCE', 'font_color': '#000000'})
     white_background = workbook.add_format({'bg_color': '#FFFFFF', 'font_color': '#000000'})
 
     # if previous month value is empty then do nothing
-    worksheet.conditional_format(f'{normalized_cost_start_column_letter}{table_row_number+2}:{normalized_cost_end_column_letter}1000',
-                             {'type': 'formula',
-                             'criteria': f'=ISBLANK(INDIRECT(ADDRESS(ROW(), COLUMN()-1)))',
-                             'format': white_background})
+    worksheet.conditional_format(
+        f'{normalized_cost_start_column_letter}{table_row_number+2}:{normalized_cost_end_column_letter}1000',
+        {
+            'type': 'formula',
+            'criteria': '=ISBLANK(INDIRECT(ADDRESS(ROW(), COLUMN()-1)))',
+            'format': white_background
+        }
+    )
 
     # if current month value is empty then do nothing
-    worksheet.conditional_format(f'{normalized_cost_start_column_letter}{table_row_number+2}:{normalized_cost_end_column_letter}1000',
-                             {'type': 'formula',
-                             'criteria': f'=ISBLANK(INDIRECT(ADDRESS(ROW(), COLUMN())))',
-                             'format': white_background})
+    worksheet.conditional_format(
+        f'{normalized_cost_start_column_letter}{table_row_number+2}:{normalized_cost_end_column_letter}1000',
+        {
+            'type': 'formula',
+            'criteria': '=ISBLANK(INDIRECT(ADDRESS(ROW(), COLUMN())))',
+            'format': white_background
+        }
+    )
 
     # current month value - prev month value >= sensetivity factor, i.e. cost is more than its been
-    worksheet.conditional_format(f'{normalized_cost_start_column_letter}{table_row_number+2}:{normalized_cost_end_column_letter}1000',
-                             {'type': 'formula',
-                              'criteria': f'=(INDIRECT(ADDRESS(ROW(), COLUMN())) - INDIRECT(ADDRESS(ROW(), COLUMN()-1))) >= INDIRECT("{sensetivity_value_cell}")',
-                              'format': red_background})
+    worksheet.conditional_format(
+        f'{normalized_cost_start_column_letter}{table_row_number+2}:{normalized_cost_end_column_letter}1000',
+        {
+            'type': 'formula',
+            'criteria': f'=(INDIRECT(ADDRESS(ROW(), COLUMN())) - INDIRECT(ADDRESS(ROW(), COLUMN()-1))) >= INDIRECT("{sensetivity_value_cell}")',
+            'format': red_background
+        }
+    )
 
     # current month value - prev month value < sensetivity factor, i.e. cost is less than its been
-    worksheet.conditional_format(f'{normalized_cost_start_column_letter}{table_row_number+2}:{normalized_cost_end_column_letter}1000',
-                             {'type': 'formula',
-                             'criteria': f'=(INDIRECT(ADDRESS(ROW(), COLUMN())) - INDIRECT(ADDRESS(ROW(), COLUMN()-1))) < (-1)*INDIRECT("{sensetivity_value_cell}")',
-                             'format': green_background})
+    worksheet.conditional_format(
+        f'{normalized_cost_start_column_letter}{table_row_number+2}:{normalized_cost_end_column_letter}1000',
+        {
+            'type': 'formula',
+            'criteria': f'=(INDIRECT(ADDRESS(ROW(), COLUMN())) - INDIRECT(ADDRESS(ROW(), COLUMN()-1))) < (-1)*INDIRECT("{sensetivity_value_cell}")',
+            'format': green_background
+        }
+    )
 
 logging.info('Done')

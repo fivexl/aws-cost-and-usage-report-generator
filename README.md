@@ -38,3 +38,6 @@ INFO: Calculating normalized cost per month
 INFO: Writing repot to cost-and-usage-report-2021-08-05.xlsx
 INFO: Done
 ```
+## Example
+
+See [example report](cost-and-usage-report-2021-08-05.xlsx) for more details
