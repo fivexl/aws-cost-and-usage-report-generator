@@ -120,7 +120,7 @@ if os.path.isfile(report_file_name):
     os.remove(report_file_name)
 
 worksheet_name = 'Cost and usage report'
-table_row_number = 5
+table_row_number = 6
 sensetivity_value_cell = '$B$3'
 normalized_cost_start_column_number = 5
 normalized_cost_start_column_letter = chr(ord('@') + normalized_cost_start_column_number + 1)
