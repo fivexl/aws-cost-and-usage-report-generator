@@ -12,8 +12,8 @@ from dateutil.relativedelta import relativedelta
 
 parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter,
                                  description="Generate cost and usage report for the last 3 month grouped by service")
-# pass sensetivity
-parser.add_argument('--sensetivity', type=float, default=0.1, help="Sensetivity of cost change formatting")
+# pass sensitivity
+parser.add_argument('--sensitivity', type=float, default=0.1, help="Sensitivity of cost change formatting")
 parser.add_argument('--out', type=str, default=f'cost-and-usage-report-{datetime.date.today()}.xlsx', help="Output file name")
 parser.add_argument('--debug', action="store_true", help="Print debug info")
 args = parser.parse_args()
@@ -23,7 +23,7 @@ if args.debug:
     logging.root.setLevel(logging.DEBUG)
 
 report_file_name = args.out
-sensetivity = args.sensetivity
+sensitivity = args.sensitivity
 # 1st day of month 3 months ago
 start = (datetime.date.today() - relativedelta(months=+3)).replace(day=1)
 # the first day of the current month
@@ -33,7 +33,7 @@ account_id = sts.get_caller_identity().get('Account')
 user_id = sts.get_caller_identity().get('Arn').split(':')[-1]
 
 logging.info(f'Getting montly cost and usage report from {start} to {end}')
-logging.info(f'Cost change sensetivity is set to {sensetivity}')
+logging.info(f'Cost change sensitivity is set to {sensitivity}')
 
 session = boto3.session.Session()
 cd = session.client('ce')
@@ -121,7 +121,7 @@ if os.path.isfile(report_file_name):
 
 worksheet_name = 'Cost and usage report'
 table_row_number = 6
-sensetivity_value_cell = '$B$3'
+sensitivity_value_cell = '$B$3'
 normalized_cost_start_column_number = 5
 normalized_cost_start_column_letter = chr(ord('@') + normalized_cost_start_column_number + 1)
 normalized_cost_end_column_letter = chr(ord('@') + normalized_cost_start_column_number + len(column_names) - 1)
@@ -157,8 +157,8 @@ with pandas.ExcelWriter(report_file_name, engine='xlsxwriter') as writer:
     worksheet.merge_range(5, 0, 5, 3, 'Montly unblended cost per service', merged_cell_format)
     worksheet.merge_range(5, 5, 5, 7, 'Normalized values by number of days in the given month', merged_cell_format)
     worksheet.set_row(5, 30)
-    worksheet.write('A3', 'Sensetivity')
-    worksheet.write(sensetivity_value_cell, sensetivity)
+    worksheet.write('A3', 'Sensitivity')
+    worksheet.write(sensitivity_value_cell, sensitivity)
     worksheet.write(f'{comments_column_letter}{table_row_number + 1}', 'Comments', merged_cell_format)
     worksheet.write(f'{suggestions_column_letter}{table_row_number + 1}', 'Suggestions', merged_cell_format)
 
@@ -186,22 +186,22 @@ with pandas.ExcelWriter(report_file_name, engine='xlsxwriter') as writer:
         }
     )
 
-    # current month value - prev month value >= sensetivity factor, i.e. cost is more than its been
+    # current month value - prev month value >= sensitivity factor, i.e. cost is more than its been
     worksheet.conditional_format(
         f'{normalized_cost_start_column_letter}{table_row_number+2}:{normalized_cost_end_column_letter}1000',
         {
             'type': 'formula',
-            'criteria': f'=(INDIRECT(ADDRESS(ROW(), COLUMN())) - INDIRECT(ADDRESS(ROW(), COLUMN()-1))) >= INDIRECT("{sensetivity_value_cell}")',
+            'criteria': f'=(INDIRECT(ADDRESS(ROW(), COLUMN())) - INDIRECT(ADDRESS(ROW(), COLUMN()-1))) >= INDIRECT("{sensitivity_value_cell}")',
             'format': red_background
         }
     )
 
-    # current month value - prev month value < sensetivity factor, i.e. cost is less than its been
+    # current month value - prev month value < sensitivity factor, i.e. cost is less than its been
     worksheet.conditional_format(
         f'{normalized_cost_start_column_letter}{table_row_number+2}:{normalized_cost_end_column_letter}1000',
         {
             'type': 'formula',
-            'criteria': f'=(INDIRECT(ADDRESS(ROW(), COLUMN())) - INDIRECT(ADDRESS(ROW(), COLUMN()-1))) < (-1)*INDIRECT("{sensetivity_value_cell}")',
+            'criteria': f'=(INDIRECT(ADDRESS(ROW(), COLUMN())) - INDIRECT(ADDRESS(ROW(), COLUMN()-1))) < (-1)*INDIRECT("{sensitivity_value_cell}")',
             'format': green_background
         }
     )
