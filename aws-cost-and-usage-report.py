@@ -63,7 +63,7 @@ logging.info('Parsing report')
 
 rows = {}
 column_names = ['Service']
-
+all_services = []
 # Example result that we need to parse
 # [{'TimePeriod': {'Start': '2021-05-01', 'End': '2021-06-01'},
 #   'Total': {},
@@ -73,13 +73,38 @@ column_names = ['Service']
 #     {'Keys': ['AWS Config'], 'Metrics': {'UnblendedCost': {'Amount': '238.304', 'Unit': 'USD'}}},
 #     {'Keys': ['AWS Database Migration Service'], 'Metrics': {'UnblendedCost': {'Amount': '26.676219876', 'Unit': 'USD'}}}
 # Above might change if query parameters are altered
+
+# The first thing we do is we get the name of all services for all month
+# We want to deal with the situation when we don't have a sevice for a first month but then it get added
+# during the second or the third month. Thus we want to pre-populate those services with 0 since we are using
+# append to form rows
 for month in results:
-    column_names.append(month['TimePeriod']['Start'])
     for service in month['Groups']:
         service_name = service['Keys'][0]
+        if service_name not in all_services:
+            all_services.append(service_name)
+logging.debug(f'all_services:\n{all_services}')
+
+# Now when we know all the service we need to deal with we can start collecting data
+for month in results:
+    column_names.append(month['TimePeriod']['Start'])
+    all_services_for_this_month = []
+    for service in month['Groups']:
+        service_name = service['Keys'][0]
+        all_services_for_this_month.append(service_name)
         if service_name not in rows:
             rows[service_name] = [service_name]
         rows[service_name].append(float(service['Metrics']['UnblendedCost']['Amount']))
+    # now we need to add all services that wasn't mentioned in this month but exist in
+    # the final reports
+    # first check that there are such services
+    if all_services_for_this_month == all_services:
+        continue
+    for service_name in all_services:
+        if service_name not in all_services_for_this_month:
+            if service_name not in rows:
+                rows[service_name] = [service_name]
+            rows[service_name].append(float(0))
 
 df = pandas.DataFrame(rows.values(), columns=column_names)
 df.fillna(value=0, inplace=True)
