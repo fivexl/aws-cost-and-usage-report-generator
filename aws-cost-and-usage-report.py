@@ -88,7 +88,7 @@ def ce_response_to_dataframe(input):
 
     # drop all the rows with zeros since there could be quite many
     # after rounding
-    df = df.loc[(df.iloc[: , 1: ] != 0).all(1)]
+    df = df.loc[(df!=0).any(axis=1)]
 
     # calculate and append total cost. Note important that we do it before sorting
     row_with_total = []
