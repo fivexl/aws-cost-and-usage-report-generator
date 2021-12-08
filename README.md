@@ -9,6 +9,9 @@ Python script to generate montly AWS cost and usage report break down
 Script will generate montly unblended cost report for the last 3 month as well will calculate normalized daily cost.
 Make sure to set AWS creds for the account for which you want to generate a report
 
+Take the output file, import it to Google Sheets, fill in comments and suggestions, export as pdf and share with the customer.
+Output file is optimized for the workflow above.
+
 ```
 > bash setup.sh
 ....
