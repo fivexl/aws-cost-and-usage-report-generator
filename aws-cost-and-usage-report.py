@@ -116,6 +116,26 @@ def ce_response_to_dataframe(input):
 
     return final_df
 
+
+def get_cost_and_usage_report_per_service(top_five_services_by_max_diff):
+    top_five_services_df = {}
+    for service_name in top_five_services_by_max_diff:
+        service_filter = {
+                "Dimensions": {
+                    "Key": "SERVICE",
+                    "Values": [service_name]
+                }
+            }
+        result = get_cost_and_usage(start, end, group_by=[{'Type': 'DIMENSION', 'Key': 'USAGE_TYPE', }], Filter=service_filter)
+        top_five_df = ce_response_to_dataframe(result)
+        top_five_df.sort_values(df.columns.tolist(), ascending=False, inplace=True)
+        top_five_services_df[service_name] = {
+            'df': top_five_df.copy(),
+            'diff': df.loc[service_name][last_month_norm_column_name] - df.loc[service_name][month_before_last_norm_column_name]
+            }
+    return top_five_services_df
+
+
 parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter,
                                  description="Generate cost and usage report for the last 3 month grouped by service")
 # pass sensitivity
@@ -160,23 +180,13 @@ rows_sorted_by_max_diff = (df[last_month_norm_column_name] - df[month_before_las
 # Have to remove 'Total cost' row otherwise it will be always in the top 5
 rows_sorted_by_max_diff.remove('Total Cost')
 top_five_services_by_max_diff = rows_sorted_by_max_diff[0:5]
+top_five_services_df = get_cost_and_usage_report_per_service(top_five_services_by_max_diff)
 
-top_five_services_df = {}
-row_names = df.axes[0].tolist()
-for service_name in top_five_services_by_max_diff:
-    service_filter = {
-            "Dimensions": {
-                "Key": "SERVICE",
-                "Values": [service_name]
-            }
-        }
-    result = get_cost_and_usage(start, end, group_by=[{'Type': 'DIMENSION', 'Key': 'USAGE_TYPE', }], Filter=service_filter)
-    top_five_df = ce_response_to_dataframe(result)
-    top_five_df.sort_values(df.columns.tolist(), ascending=False, inplace=True)
-    top_five_services_df[service_name] = {
-        'df': top_five_df.copy(),
-        'diff': df.loc[service_name][last_month_norm_column_name] - df.loc[service_name][month_before_last_norm_column_name]
-        }
+# Get break down by account
+logging.info('Preparing report grouped per account')
+results_per_account = get_cost_and_usage(start, end, group_by=[{'Type': 'DIMENSION', 'Key': 'LINKED_ACCOUNT'}], granularity='MONTHLY', metrics=['UnblendedCost'])
+logging.debug(f'Response:\n{results_per_account}')
+df_per_account = ce_response_to_dataframe(results_per_account)
 
 logging.info(f'Writing repot to {report_file_name}')
 
@@ -195,20 +205,38 @@ suggestions_column_letter = chr(ord('@') + len(df.columns) + 3)
 # pylint: disable=E0110
 with pandas.ExcelWriter(report_file_name, engine='xlsxwriter') as writer:
 
+    # Write primary report
     df.to_excel(writer,
                 sheet_name=worksheet_name,
                 startrow=table_row_number,
                 startcol=0,
                 index=True)
+    row_counter = table_row_number + len(df.index.values.tolist()) + 3
 
     workbook = writer.book
     worksheet = writer.sheets[worksheet_name]
-    row_counter = table_row_number + len(df.index.values.tolist()) + 3
+    merged_cell_format = workbook.add_format()
+    merged_cell_format.set_text_wrap(True)
+    merged_cell_format.set_align('center')
+    merged_cell_format.set_align('top')
+
+    # Write per account break down
+    worksheet.merge_range(f'A{row_counter}:H{row_counter}', f'Report grouped per linked account')
+    df_per_account.to_excel(writer,
+        sheet_name=worksheet_name,
+        startrow=row_counter,
+        startcol=0,
+        index=True
+    )
+    row_counter += len(df_per_account.index.values.tolist()) + 2
+
+    # Write top 5 services
     worksheet.write('A' + str(row_counter), 'Top 5 services break down by usage type')
+    worksheet.merge_range(f'A{row_counter}:H{row_counter}', 'Top 5 services break down by usage type')
     row_counter += 1
 
     for service in top_five_services_by_max_diff:
-        worksheet.write('A' + str(row_counter), f'{service}\ndiff: {top_five_services_df[service]["diff"]}')
+        worksheet.merge_range(f'A{row_counter}:H{row_counter}', f'{service}. diff compared to prev month: {top_five_services_df[service]["diff"]}')
         top_five_services_df[service]['df'].to_excel(writer,
                                                 sheet_name=worksheet_name,
                                                 startrow=row_counter,
@@ -219,10 +247,6 @@ with pandas.ExcelWriter(report_file_name, engine='xlsxwriter') as writer:
     # E1101: Instance of 'ExcelWriter' has no 'book' member (no-member)
     # pylint: disable=E1101
 
-    merged_cell_format = workbook.add_format()
-    merged_cell_format.set_text_wrap(True)
-    merged_cell_format.set_align('center')
-    merged_cell_format.set_align('top')
     text_column_format = workbook.add_format()
     text_column_format.set_text_wrap(True)
     text_column_format.set_align('left')
