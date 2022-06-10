@@ -10,6 +10,17 @@ import os
 from calendar import monthrange
 from dateutil.relativedelta import relativedelta
 
+# Filters 
+# TODO: with and without filter
+credit_filter = {
+    "Not": { 
+        "Dimensions": { 
+            "Key": "RECORD_TYPE", 
+            "Values": ["Credit"] 
+        } 
+    }
+}
+
 def get_cost_and_usage(start_date, end_date, group_by=[{'Type': 'DIMENSION', 'Key': 'SERVICE'}], granularity='MONTHLY', metrics=['UnblendedCost'], **kwargs):
     results = []
     token = None
@@ -126,7 +137,8 @@ def get_cost_and_usage_report_per_service(top_five_services_by_max_diff):
                     "Values": [service_name]
                 }
             }
-        result = get_cost_and_usage(start, end, group_by=[{'Type': 'DIMENSION', 'Key': 'USAGE_TYPE', }], Filter=service_filter)
+        result_filter = { "And" : [ credit_filter, service_filter ] }
+        result = get_cost_and_usage(start, end, group_by=[{'Type': 'DIMENSION', 'Key': 'USAGE_TYPE', }], Filter=result_filter)
         top_five_df = ce_response_to_dataframe(result)
         top_five_df.sort_values(df.columns.tolist(), ascending=False, inplace=True)
         top_five_services_df[service_name] = {
@@ -161,7 +173,7 @@ user_id = sts.get_caller_identity().get('Arn').split(':')[-1]
 logging.info(f'Getting montly cost and usage report from {start} to {end}')
 logging.info(f'Cost change sensitivity is set to {sensitivity}')
 
-results = get_cost_and_usage(start, end)
+results = get_cost_and_usage(start, end, Filter=credit_filter)
 
 logging.debug(f'Response:\n{results}')
 
@@ -184,7 +196,7 @@ top_five_services_df = get_cost_and_usage_report_per_service(top_five_services_b
 
 # Get break down by account
 logging.info('Preparing report grouped per account')
-results_per_account = get_cost_and_usage(start, end, group_by=[{'Type': 'DIMENSION', 'Key': 'LINKED_ACCOUNT'}], granularity='MONTHLY', metrics=['UnblendedCost'])
+results_per_account = get_cost_and_usage(start, end, group_by=[{'Type': 'DIMENSION', 'Key': 'LINKED_ACCOUNT'}], granularity='MONTHLY', metrics=['UnblendedCost'], Filter=credit_filter)
 logging.debug(f'Response:\n{results_per_account}')
 df_per_account = ce_response_to_dataframe(results_per_account)
 
