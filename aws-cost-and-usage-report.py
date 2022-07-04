@@ -6,9 +6,14 @@ import datetime
 import pandas
 import logging
 import os
+import copy
 
 from calendar import monthrange
 from dateutil.relativedelta import relativedelta
+
+logging.basicConfig(format='%(levelname)s %(filename)s:%(lineno)s : %(message)s', level=logging.WARNING)
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
 
 def get_cost_and_usage(start_date, end_date, group_by=[{'Type': 'DIMENSION', 'Key': 'SERVICE'}], granularity='MONTHLY', metrics=['UnblendedCost'], **kwargs):
     results = []
@@ -16,6 +21,8 @@ def get_cost_and_usage(start_date, end_date, group_by=[{'Type': 'DIMENSION', 'Ke
 
     session = boto3.session.Session()
     ce = session.client('ce')
+    logger.debug(f'get_cost_and_usage\nstart_date: {start_date}\nend_date: {end_date}\n' +
+        f'group_by: {group_by}\ngranularity: {granularity}\nmetrics: {metrics}\nkwargs: {kwargs}')
     while True:
         if token:
             params = {'NextPageToken': token} + kwargs
@@ -58,7 +65,7 @@ def ce_response_to_dataframe(input):
             key_name = group['Keys'][0]
             if key_name not in all_keys:
                 all_keys.append(key_name)
-    logging.debug(f'all_keys:\n{all_keys}')
+    logger.debug(f'all_keys:\n{all_keys}')
 
     # Now when we know all the keys we need to deal with, we can start collecting data
     for month in input:
@@ -84,7 +91,7 @@ def ce_response_to_dataframe(input):
     df = pandas.DataFrame(rows.values(), columns=column_names, index=all_keys)
     df.fillna(value=0, inplace=True)
     df = df.round(2)
-    logging.debug(f'Initial data frame:\n{df}\n')
+    logger.debug(f'Initial data frame:\n{df}\n')
 
     # drop all the rows with zeros since there could be quite many
     # after rounding
@@ -112,21 +119,24 @@ def ce_response_to_dataframe(input):
     # to write to file later on
     final_df.insert(3,'---','')
 
-    logging.debug(f'Data frame with normalized data:\n{final_df}\n')
+    logger.debug(f'Data frame with normalized data:\n{final_df}\n')
 
     return final_df
 
 
-def get_cost_and_usage_report_per_service(top_five_services_by_max_diff):
+def get_cost_and_usage_report_per_service(top_five_services_by_max_diff, filter, metrics):
     top_five_services_df = {}
     for service_name in top_five_services_by_max_diff:
-        service_filter = {
+        service_filter = copy.deepcopy(filter)
+        service_filter['And'].append(
+            {
                 "Dimensions": {
                     "Key": "SERVICE",
                     "Values": [service_name]
                 }
             }
-        result = get_cost_and_usage(start, end, group_by=[{'Type': 'DIMENSION', 'Key': 'USAGE_TYPE', }], Filter=service_filter)
+        )
+        result = get_cost_and_usage(start, end, group_by=[{'Type': 'DIMENSION', 'Key': 'USAGE_TYPE', }], Filter=service_filter, metrics=metrics)
         top_five_df = ce_response_to_dataframe(result)
         top_five_df.sort_values(df.columns.tolist(), ascending=False, inplace=True)
         top_five_services_df[service_name] = {
@@ -142,11 +152,12 @@ parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFo
 parser.add_argument('--sensitivity', type=float, default=0.1, help="Sensitivity of cost change formatting")
 parser.add_argument('--out', type=str, default=f'cost-and-usage-report-{datetime.date.today()}.xlsx', help="Output file name")
 parser.add_argument('--debug', action="store_true", help="Print debug info")
+parser.add_argument('--exclude_credit', action="store_true", default=True, help="Exclude credit from the report")
+parser.add_argument('--exclude_refunds', action="store_true", default=True, help="Exclude refunds from the report")
 args = parser.parse_args()
 
-logging.basicConfig(format='%(levelname)s: %(message)s', level=logging.INFO)
 if args.debug:
-    logging.root.setLevel(logging.DEBUG)
+    logger.setLevel(logging.DEBUG)
 
 report_file_name = args.out
 sensitivity = args.sensitivity
@@ -154,24 +165,32 @@ sensitivity = args.sensitivity
 start = (datetime.date.today() - relativedelta(months=+3)).replace(day=1)
 # the first day of the current month
 end = datetime.date.today().replace(day=1)
+filter = {"And": []}
+if args.exclude_credit:
+    filter['And'].append({'Not': {'Dimensions': {'Key': 'RECORD_TYPE', 'Values': ['Credit']}}})
+if args.exclude_refunds:
+    filter['And'].append({'Not': {'Dimensions': {'Key': 'RECORD_TYPE', 'Values': ['Refund']}}})
+metrics=['UnblendedCost']
 sts = boto3.client('sts')
 account_id = sts.get_caller_identity().get('Account')
 user_id = sts.get_caller_identity().get('Arn').split(':')[-1]
 
-logging.info(f'Getting montly cost and usage report from {start} to {end}')
-logging.info(f'Cost change sensitivity is set to {sensitivity}')
+logger.info(f'Getting montly cost and usage report from {start} to {end}')
+logger.info(f'Cost change sensitivity is set to {sensitivity}')
+logger.info(f'Exclude credit {args.exclude_credit}')
+logger.info(f'Exclude refunds {args.exclude_refunds}')
 
-results = get_cost_and_usage(start, end)
+results = get_cost_and_usage(start, end, Filter=filter, metrics=metrics)
 
-logging.debug(f'Response:\n{results}')
+logger.debug(f'Response:\n{results}')
 
-logging.info('Parsing report')
+logger.info('Parsing report')
 
 df = ce_response_to_dataframe(results)
 
-logging.debug(f'Results converted to data frame:\n{df}\n')
+logger.debug(f'Results converted to data frame:\n{df}\n')
 
-logging.info('Calculating services with most differences and getting usage type break down for the top 5')
+logger.info('Calculating services with most differences and getting usage type break down for the top 5')
 num_of_col = len(df.columns)
 last_month_norm_column_name = df.columns[num_of_col - 1]
 month_before_last_norm_column_name = df.columns[num_of_col - 2]
@@ -180,15 +199,15 @@ rows_sorted_by_max_diff = (df[last_month_norm_column_name] - df[month_before_las
 # Have to remove 'Total cost' row otherwise it will be always in the top 5
 rows_sorted_by_max_diff.remove('Total Cost')
 top_five_services_by_max_diff = rows_sorted_by_max_diff[0:5]
-top_five_services_df = get_cost_and_usage_report_per_service(top_five_services_by_max_diff)
+top_five_services_df = get_cost_and_usage_report_per_service(top_five_services_by_max_diff, filter, metrics=metrics)
 
 # Get break down by account
-logging.info('Preparing report grouped per account')
-results_per_account = get_cost_and_usage(start, end, group_by=[{'Type': 'DIMENSION', 'Key': 'LINKED_ACCOUNT'}], granularity='MONTHLY', metrics=['UnblendedCost'])
-logging.debug(f'Response:\n{results_per_account}')
+logger.info('Preparing report grouped per account')
+results_per_account = get_cost_and_usage(start, end, group_by=[{'Type': 'DIMENSION', 'Key': 'LINKED_ACCOUNT'}], granularity='MONTHLY', metrics=metrics, Filter=filter)
+logger.debug(f'Response:\n{results_per_account}')
 df_per_account = ce_response_to_dataframe(results_per_account)
 
-logging.info(f'Writing repot to {report_file_name}')
+logger.info(f'Writing repot to {report_file_name}')
 
 if os.path.isfile(report_file_name):
     os.remove(report_file_name)
@@ -313,4 +332,4 @@ with pandas.ExcelWriter(report_file_name, engine='xlsxwriter') as writer:
         }
     )
 
-logging.info('Done')
+logger.info('Done')
