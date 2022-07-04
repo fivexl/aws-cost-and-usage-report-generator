@@ -285,6 +285,10 @@ with pandas.ExcelWriter(report_file_name, engine='xlsxwriter') as writer:
     worksheet.set_row(5, 30)
     worksheet.write('A3', 'Sensitivity')
     worksheet.write(sensitivity_value_cell, sensitivity)
+    worksheet.write('A4', 'Credit excluded')
+    worksheet.write('B4', 'Yes' if args.exclude_credit else 'No')
+    worksheet.write('A5', 'Refund excluded')
+    worksheet.write('B5', 'Yes' if args.exclude_refunds else 'No')
     worksheet.write(f'{comments_column_letter}{table_row_number + 1}', 'Comments', merged_cell_format)
     worksheet.write(f'{suggestions_column_letter}{table_row_number + 1}', 'Suggestions', merged_cell_format)
 
