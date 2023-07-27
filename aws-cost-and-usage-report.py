@@ -7,9 +7,23 @@ import pandas
 import logging
 import os
 import copy
+import re
+
+
+from xlsxwriter.worksheet import Worksheet
+from xlsxwriter.format import Format
+import reservations
+import savings_plans
+from mypy_boto3_ce import CostExplorerClient
+from logging import Logger
 
 from calendar import monthrange
 from dateutil.relativedelta import relativedelta
+
+session = boto3.session.Session()
+ce = boto3.client('ce')
+sts = boto3.client('sts')
+org_client = boto3.client("organizations")
 
 logging.basicConfig(format='%(levelname)s %(filename)s:%(lineno)s : %(message)s', level=logging.WARNING)
 logger = logging.getLogger(__name__)
@@ -19,8 +33,6 @@ def get_cost_and_usage(start_date, end_date, group_by=[{'Type': 'DIMENSION', 'Ke
     results = []
     token = None
 
-    session = boto3.session.Session()
-    ce = session.client('ce')
     logger.debug(f'get_cost_and_usage\nstart_date: {start_date}\nend_date: {end_date}\n' +
         f'group_by: {group_by}\ngranularity: {granularity}\nmetrics: {metrics}\nkwargs: {kwargs}')
     while True:
@@ -146,6 +158,62 @@ def get_cost_and_usage_report_per_service(top_five_services_by_max_diff, filter,
     return top_five_services_df
 
 
+def add_to_report(
+        title: str,
+        df: pandas.DataFrame | None,
+        writer: pandas.ExcelWriter,
+        worksheet: Worksheet,
+        start_row: int,
+        fmt: Format,
+        WORKSHEET_NAME: str 
+) -> int:
+    if df is not None:
+        df.to_excel(writer, sheet_name=WORKSHEET_NAME, startrow=start_row, startcol=0, index=False)
+        worksheet.merge_range(start_row -1, 0, start_row -1, len(df.columns) -1, title, fmt)
+        start_row += len(df.index) + 3
+    else:
+        worksheet.write(start_row, 0, f"No {title.lower()} info", fmt)
+        start_row += 2
+    return start_row
+
+def add_savings_plans_info_to_report(
+        start_row: int,
+        client: CostExplorerClient,
+        logger: Logger,
+        merged_cell_format: Format,
+        writer: pandas.ExcelWriter,
+        worksheet: Worksheet,
+        work_sheet_name: str
+) -> int:
+    savings_plans_dataframes = savings_plans.get_savings_plans_dataframes(client, logger)
+    if savings_plans_dataframes is not None:
+        for section_title, dfs in savings_plans_dataframes.items():
+            worksheet.merge_range(start_row, 0, start_row, 9, section_title, merged_cell_format)
+            start_row += 2
+            for title, df in dfs.items():
+                start_row = add_to_report(title, df, writer, worksheet, start_row, merged_cell_format, work_sheet_name)
+    return start_row
+
+            
+def add_reservations_info_to_report(
+        start_row: int,
+        client: CostExplorerClient,
+        logger: Logger,
+        merged_cell_format: Format,
+        writer: pandas.ExcelWriter,
+        worksheet: Worksheet,
+        work_sheet_name: str
+) -> int:
+    reservations_dataframes = reservations.get_reservations_dataframes(client, logger)
+    if reservations_dataframes is not None:
+        for section_title, dfs in reservations_dataframes.items():
+            worksheet.merge_range(start_row, 0, start_row, 9, section_title, merged_cell_format)
+            start_row += 2
+            for title, df in dfs.items():
+                start_row = add_to_report(title, df, writer, worksheet, start_row, merged_cell_format, work_sheet_name)
+    return start_row
+
+
 parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter,
                                  description="Generate cost and usage report for the last 3 month grouped by service")
 # pass sensitivity
@@ -171,7 +239,6 @@ if args.exclude_credit:
 if args.exclude_refunds:
     filter['And'].append({'Not': {'Dimensions': {'Key': 'RECORD_TYPE', 'Values': ['Refund']}}})
 metrics=['UnblendedCost']
-sts = boto3.client('sts')
 account_id = sts.get_caller_identity().get('Account')
 user_id = sts.get_caller_identity().get('Arn').split(':')[-1]
 
@@ -262,6 +329,28 @@ with pandas.ExcelWriter(report_file_name, engine='xlsxwriter') as writer:
                                                 startcol=0,
                                                 index=True)
         row_counter = row_counter + len(top_five_services_df[service]['df'].index.values.tolist()) + 3
+
+    # Write Savings Plans info
+    row_counter = add_savings_plans_info_to_report(
+        start_row = row_counter,
+        client = ce,
+        logger = logger,
+        merged_cell_format = merged_cell_format,
+        writer = writer,
+        worksheet = worksheet,
+        work_sheet_name = worksheet_name
+    )
+
+    # Write Reservations info
+    row_counter = add_reservations_info_to_report(
+        start_row = row_counter,
+        client = ce,
+        logger = logger,
+        merged_cell_format = merged_cell_format,
+        writer = writer,
+        worksheet = worksheet,
+        work_sheet_name = worksheet_name
+    )
 
     # E1101: Instance of 'ExcelWriter' has no 'book' member (no-member)
     # pylint: disable=E1101
