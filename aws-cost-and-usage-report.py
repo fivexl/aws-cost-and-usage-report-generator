@@ -272,7 +272,33 @@ top_five_services_df = get_cost_and_usage_report_per_service(top_five_services_b
 logger.info('Preparing report grouped per account')
 results_per_account = get_cost_and_usage(start, end, group_by=[{'Type': 'DIMENSION', 'Key': 'LINKED_ACCOUNT'}], granularity='MONTHLY', metrics=metrics, Filter=filter)
 logger.debug(f'Response:\n{results_per_account}')
+
+
+def get_account_name(account_id, organization_client):
+    response = organization_client.describe_account(AccountId=account_id)
+    return response['Account']['Name']
+
+
+def get_account_name_for_account_id_index(
+        df_per_account: pandas.DataFrame,
+        organization_client,
+)-> pandas.DataFrame:
+    # Iterate over the index of the dataframe
+    for i in range(len(df_per_account.index)):
+        idx = df_per_account.index[i]
+
+        # If the index is an AWS Account ID, replace it with the account name
+        if re.match(r'\d{12}', idx):  # regex to check if the string looks like an AWS Account ID # type: ignore
+            try:
+                account_name = get_account_name(idx, organization_client=organization_client)
+                df_per_account = df_per_account.rename(index={idx: account_name})
+            except Exception as e:
+                print(f'Failed to get account name for id {idx}. Error: {e}')
+                continue
+    return df_per_account
+
 df_per_account = ce_response_to_dataframe(results_per_account)
+df_per_account = get_account_name_for_account_id_index(df_per_account, org_client)
 
 logger.info(f'Writing repot to {report_file_name}')
 
