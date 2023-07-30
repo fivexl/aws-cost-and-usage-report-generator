@@ -45,11 +45,15 @@ def get_reservations_utilizations_data(
         return None
 
 
-def reservations_utilization_to_df(reservations_utilization_data: dict) -> pd.DataFrame:
+def reservations_utilization_to_df(reservations_utilization_data: dict, org_client) -> pd.DataFrame:
+
     data = [
         {
             "Id": group["Attributes"]["reservationARN"],
-            "Account": group["Attributes"]["accountName"],
+            "Account": utils.get_account_info_by_account_name(
+                account_name = group["Attributes"]["accountName"],
+                org_client = org_client
+            ),
             "InstanceType": group["Attributes"]["instanceType"],
             "Region": group["Attributes"]["region"],
             "UtilizationPercentage": group["Utilization"]["UtilizationPercentage"],
@@ -99,6 +103,7 @@ def format_reservations_utilization_df(raw_df, raw_total: pd.DataFrame) -> pd.Da
 def get_reservations_utilization_df(
     client: CostExplorerClient,
     logger: Logger,
+    org_client,
 ) -> pd.DataFrame | None:
     reservation_utilization_data = get_reservations_utilizations_data(client, logger)
 
@@ -109,7 +114,8 @@ def get_reservations_utilization_df(
         return None
 
     raw_reservation_utilization_df = reservations_utilization_to_df(
-        reservation_utilization_data["UtilizationsByTime"][0]["Groups"]
+        reservation_utilization_data["UtilizationsByTime"][0]["Groups"],
+        org_client
     )
 
     raw_total = reservation_utilization_data["UtilizationsByTime"][0]["Total"]
@@ -276,19 +282,24 @@ def get_reservations_purchase_recommendations_df(
 
 
 def get_reservations_dataframes(
-    client: CostExplorerClient,
+    ce_client: CostExplorerClient,
     logger: Logger,
+    org_client
 ) -> dict[str, dict[str, pd.DataFrame | None]] | None:
     if GET_RESERVED_INSTANCES_INFO:
-        reservations_utilization_df = get_reservations_utilization_df(client, logger)
-        reservation_coverage_df = get_reservation_coverage_df(client, logger)
+        reservations_utilization_df = get_reservations_utilization_df(
+            ce_client,
+            logger,
+            org_client
+        )
+        reservation_coverage_df = get_reservation_coverage_df(ce_client, logger)
         if reservations_utilization_df is None:
             reservation_coverage_df = None
         return {
             "Reservations info": {
                 "Reservations utilization": reservations_utilization_df,
                 "Reservation purchase recommendations": get_reservations_purchase_recommendations_df(
-                    client, logger
+                    ce_client, logger
                 ),
                 "Reservation coverage": reservation_coverage_df,
             }

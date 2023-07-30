@@ -185,7 +185,7 @@ def add_savings_plans_info_to_report(
         worksheet: Worksheet,
         work_sheet_name: str
 ) -> int:
-    savings_plans_dataframes = savings_plans.get_savings_plans_dataframes(client, logger)
+    savings_plans_dataframes = savings_plans.get_savings_plans_dataframes(client, logger, org_client)
     if savings_plans_dataframes is not None:
         for section_title, dfs in savings_plans_dataframes.items():
             worksheet.merge_range(start_row, 0, start_row, 9, section_title, merged_cell_format)
@@ -204,7 +204,7 @@ def add_reservations_info_to_report(
         worksheet: Worksheet,
         work_sheet_name: str
 ) -> int:
-    reservations_dataframes = reservations.get_reservations_dataframes(client, logger)
+    reservations_dataframes = reservations.get_reservations_dataframes(client, logger, org_client)
     if reservations_dataframes is not None:
         for section_title, dfs in reservations_dataframes.items():
             worksheet.merge_range(start_row, 0, start_row, 9, section_title, merged_cell_format)
@@ -291,7 +291,8 @@ def get_account_name_for_account_id_index(
         if re.match(r'\d{12}', idx):  # regex to check if the string looks like an AWS Account ID # type: ignore
             try:
                 account_name = get_account_name(idx, organization_client=organization_client)
-                df_per_account = df_per_account.rename(index={idx: account_name})
+                account_info = f"{account_name}({idx})"
+                df_per_account = df_per_account.rename(index={idx: account_info})
             except Exception as e:
                 print(f'Failed to get account name for id {idx}. Error: {e}')
                 continue

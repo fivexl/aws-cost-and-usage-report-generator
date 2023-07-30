@@ -2,6 +2,7 @@ from datetime import datetime, timezone
 
 import pandas as pd
 
+from config import MISSING_DATA_PLACEHOLDER
 
 def days_until(date_str: str) -> str:
     """Return the number of days until the date_str.
@@ -53,3 +54,15 @@ def to_percentage(series: pd.Series, round: int = 1) -> pd.Series:
 def to_dollars(series: pd.Series, round: int = 1) -> pd.Series:
     series = series.astype(float).round(round)
     return "$" + series.astype(str)  # sourcery skip: use-fstring-for-concatenation
+
+
+def get_account_info_by_account_name(account_name: str, org_client) -> str:
+    accounts = org_client.list_accounts()
+    return next(
+        (
+            f"{account_name}({account['Id']})"
+            for account in accounts["Accounts"]
+            if account["Name"] == account_name
+        ),
+        account_name,
+    )

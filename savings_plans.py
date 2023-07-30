@@ -34,6 +34,7 @@ def get_savings_plans_utilization_details(
 def get_savings_plans_utilization_df(
     client: CostExplorerClient,
     logger: Logger,
+    org_client
 ) -> pd.DataFrame | None:
     details = get_savings_plans_utilization_details(client, logger)
 
@@ -41,7 +42,8 @@ def get_savings_plans_utilization_df(
         return None
 
     raw_utilization_df = utilization_details_to_df(
-        details["SavingsPlansUtilizationDetails"]
+        details["SavingsPlansUtilizationDetails"],
+        org_client
     )
 
     raw_total_utilization = details["Total"]
@@ -50,13 +52,16 @@ def get_savings_plans_utilization_df(
     )
 
 
-def utilization_details_to_df(sp_info: dict) -> pd.DataFrame:
+def utilization_details_to_df(sp_info: dict, org_client) -> pd.DataFrame:
     data = [
         {
             "SavingsPlanArn": sp["SavingsPlanArn"],
             "Utilization": sp["Utilization"]["UtilizationPercentage"],
             "EndDateTime": sp["Attributes"]["EndDateTime"],
-            "Account": sp["Attributes"]["AccountName"],
+            "Account": utils.get_account_info_by_account_name(
+                account_name = sp["Attributes"]["AccountName"],
+                org_client = org_client
+            ),
             "Region": sp["Attributes"]["Region"],
             "Savings": sp["Savings"]["NetSavings"],
             "Type": sp["Attributes"]["SavingsPlansType"],
@@ -229,10 +234,16 @@ def format_saving_plan_recommendations(raw_df: pd.DataFrame) -> pd.DataFrame:
 
 
 def get_savings_plans_dataframes(
-    client: CostExplorerClient, logger: Logger
+    client: CostExplorerClient,
+    logger: Logger,
+    org_client
 ) -> dict[str, dict[str, pd.DataFrame | None]] | None:
     if GET_SAVINGS_PLANS_INFO:
-        savings_plans_utilization_df = get_savings_plans_utilization_df(client, logger)
+        savings_plans_utilization_df = get_savings_plans_utilization_df(
+            client,
+            logger,
+            org_client
+        )
         savings_plans_coverage_df = get_savings_plans_coverage_df(client, logger)
         if savings_plans_utilization_df is None:
             savings_plans_coverage_df = None
