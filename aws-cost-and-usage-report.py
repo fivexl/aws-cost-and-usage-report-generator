@@ -349,7 +349,8 @@ with pandas.ExcelWriter(report_file_name, engine='xlsxwriter') as writer:
     row_counter += 1
 
     for service in top_five_services_by_max_diff:
-        worksheet.merge_range(f'A{row_counter}:H{row_counter}', f'{service}. diff compared to prev month: {top_five_services_df[service]["diff"]}')
+        worksheet.merge_range(f'A{row_counter}:H{row_counter}', 
+                     f'{service}. diff compared to prev month: {top_five_services_df[service]["diff"]:.2f}')
         top_five_services_df[service]['df'].to_excel(writer,
                                                 sheet_name=worksheet_name,
                                                 startrow=row_counter,
