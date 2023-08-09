@@ -117,7 +117,7 @@ def ce_response_to_dataframe(input):
     df = df.append(row_wiht_total_series)
 
     # Sort data frame
-    df.sort_values(df.columns.tolist(), ascending=False, inplace=True)
+    df.sort_values(by=df.columns[-1], ascending=False, inplace=True)
 
     final_df = df.copy()
     for column in df.columns:
