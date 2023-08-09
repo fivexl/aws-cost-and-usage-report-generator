@@ -10,6 +10,7 @@ from config import (
     GET_RESERVED_INSTANCES_INFO,
     MISSING_DATA_PLACEHOLDER,
     RPR_CONFIG,
+    LIST_OF_SERVICES_FOR_RESERVATIONS_COVERAGE
 )
 
 
@@ -128,7 +129,7 @@ def get_reservations_utilization_df(
 
 
 def get_reservation_coverage_data(
-    client: CostExplorerClient, logger: Logger
+    client: CostExplorerClient, logger: Logger, service: str
 ) -> dict | None:
     try:
         return client.get_reservation_coverage(
@@ -139,6 +140,12 @@ def get_reservation_coverage_data(
             GroupBy=[
                 {"Type": "DIMENSION", "Key": "INSTANCE_TYPE"},
             ],
+            Filter={
+                    'Dimensions': {
+                        'Key': 'SERVICE',
+                        'Values': [service],
+                    },
+                }
         )  # type: ignore
     except client.exceptions.DataUnavailableException:
         logger.info(
@@ -188,6 +195,7 @@ def format_reservation_coverage_df(raw_df, total_df: pd.DataFrame) -> pd.DataFra
 def get_reservation_coverage_df(
     client: CostExplorerClient,
     logger: Logger,
+    service: str
 ) -> pd.DataFrame | None:
     reservation_coverage_data = get_reservation_coverage_data(client, logger)
 
@@ -285,22 +293,30 @@ def get_reservations_dataframes(
     ce_client: CostExplorerClient,
     logger: Logger,
     org_client
-) -> dict[str, dict[str, pd.DataFrame | None]] | None:
+) -> list[dict] | None:
     if GET_RESERVED_INSTANCES_INFO:
         reservations_utilization_df = get_reservations_utilization_df(
             ce_client,
             logger,
             org_client
         )
-        reservation_coverage_df = get_reservation_coverage_df(ce_client, logger)
-        if reservations_utilization_df is None:
-            reservation_coverage_df = None
-        return {
-            "Reservations info": {
-                "Reservations utilization": reservations_utilization_df,
-                "Reservation purchase recommendations": get_reservations_purchase_recommendations_df(
+
+        result = [
+            {
+                "Title": "Reservations utilization",
+                "Dataframe": reservations_utilization_df
+            },
+            {
+                "Title": "Reservation purchase recommendations",
+                "Dataframe": get_reservations_purchase_recommendations_df(
                     ce_client, logger
-                ),
-                "Reservation coverage": reservation_coverage_df,
-            }
-        }
+                )
+            },
+        ]
+        if reservations_utilization_df is not None:
+            for s in LIST_OF_SERVICES_FOR_RESERVATIONS_COVERAGE:
+                df = get_reservation_coverage_df(ce_client, logger, s)
+                if df is not None:
+                    result.append({"Title": f"{s} Reservation coverage", "Dataframe": df})
+        
+        return result

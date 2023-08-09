@@ -19,6 +19,18 @@ FIRST_DAY_THIS_MONTH = first_day_this_month_raw.strftime("%Y-%m-%d")
 FIRST_DAY_PREV_MONTH = first_day_prev_month_raw.strftime("%Y-%m-%d")
 
 
+# List of services for which you want to get in reservations coverage report
+LIST_OF_SERVICES_FOR_RESERVATIONS_COVERAGE = [
+    "Amazon Elastic Compute Cloud - Compute",
+    "Amazon Relational Database Service",
+    # "Amazon ElastiCache",
+    # "Amazon Redshift",
+    # "Amazon Elasticsearch Service",
+    # "Amazon OpenSearch Service",
+    # "Amazon MemoryDB",
+]
+
+
 # Configuration for getting purchase recommendations for Savings Plans
 SP_CONFIG = [
     {

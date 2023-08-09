@@ -204,13 +204,15 @@ def add_reservations_info_to_report(
         worksheet: Worksheet,
         work_sheet_name: str
 ) -> int:
-    reservations_dataframes = reservations.get_reservations_dataframes(client, logger, org_client)
-    if reservations_dataframes is not None:
-        for section_title, dfs in reservations_dataframes.items():
-            worksheet.merge_range(start_row, 0, start_row, 9, section_title, merged_cell_format)
-            start_row += 2
-            for title, df in dfs.items():
-                start_row = add_to_report(title, df, writer, worksheet, start_row, merged_cell_format, work_sheet_name)
+    reservations_data = reservations.get_reservations_dataframes(client, logger, org_client)
+
+    if reservations_data is not None:
+        worksheet.merge_range(start_row, 0, start_row, 9, "Reservations Info", merged_cell_format)
+        start_row += 2
+        for data in reservations_data:
+            title = data["Title"]
+            df = data["Dataframe"]
+            start_row = add_to_report(title, df, writer, worksheet, start_row, merged_cell_format, work_sheet_name)
     return start_row
 
 
