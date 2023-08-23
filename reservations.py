@@ -197,7 +197,7 @@ def get_reservation_coverage_df(
     logger: Logger,
     service: str
 ) -> pd.DataFrame | None:
-    reservation_coverage_data = get_reservation_coverage_data(client, logger)
+    reservation_coverage_data = get_reservation_coverage_data(client, logger, service)
 
     if reservation_coverage_data is None:
         return None
