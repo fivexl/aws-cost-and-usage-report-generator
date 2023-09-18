@@ -20,6 +20,7 @@ from config import (
 def get_reservations_utilizations_data(
     client: CostExplorerClient, logger: Logger
 ) -> dict | None:
+    logger.info("Getting reservations utilization data for time period from: %s to: %s")
     try:
         return client.get_reservation_utilization(
             TimePeriod={
@@ -32,16 +33,17 @@ def get_reservations_utilizations_data(
         )  # type: ignore
     except client.exceptions.DataUnavailableException:
         logger.info(
-            "Reservation utilization data is unavailable for %s to %s",
+            "There is no reservations utilization info for time period from: %s to: %s",
             FIRST_DAY_PREV_MONTH,
             FIRST_DAY_THIS_MONTH,
         )
         return None
-    except Exception:
+    except Exception as e:
         logger.warning(
-            "Failed to get reservation utilization data for %s to %s",
+            "Failed to get reservation utilization data for time period from: %s to: %s, error: %s",
             FIRST_DAY_PREV_MONTH,
             FIRST_DAY_THIS_MONTH,
+            e,
         )
         return None
 
@@ -107,6 +109,7 @@ def get_reservations_utilization_df(
     org_client,
 ) -> pd.DataFrame | None:
     reservation_utilization_data = get_reservations_utilizations_data(client, logger)
+    logger.debug("Reservation utilization data: %s", reservation_utilization_data)
 
     if reservation_utilization_data is None:
         return None
@@ -118,8 +121,10 @@ def get_reservations_utilization_df(
         reservation_utilization_data["UtilizationsByTime"][0]["Groups"],
         org_client
     )
+    logger.debug("Raw reservation utilization df: %s", raw_reservation_utilization_df)
 
     raw_total = reservation_utilization_data["UtilizationsByTime"][0]["Total"]
+    logger.debug("Raw total: %s", raw_total)
     return format_reservations_utilization_df(raw_reservation_utilization_df, raw_total)
 
 
@@ -131,6 +136,7 @@ def get_reservations_utilization_df(
 def get_reservation_coverage_data(
     client: CostExplorerClient, logger: Logger, service: str
 ) -> dict | None:
+    logger.info("Getting reservation coverage data for %s to %s", FIRST_DAY_PREV_MONTH, FIRST_DAY_THIS_MONTH)
     try:
         return client.get_reservation_coverage(
             TimePeriod={
@@ -149,16 +155,17 @@ def get_reservation_coverage_data(
         )  # type: ignore
     except client.exceptions.DataUnavailableException:
         logger.info(
-            "Reservation coverage data is unavailable for %s to %s",
+            "There is no reservations coverage info for time period from: %s to: %s",
             FIRST_DAY_PREV_MONTH,
             FIRST_DAY_THIS_MONTH,
         )
         return None
-    except Exception:
+    except Exception as e:
         logger.warning(
-            "Failed to get reservation coverage data for %s to %s",
+            "Failed to get reservation coverage data for time period from: %s to: %s, error: %s",
             FIRST_DAY_PREV_MONTH,
             FIRST_DAY_THIS_MONTH,
+            e,
         )
         return None
 
@@ -198,6 +205,7 @@ def get_reservation_coverage_df(
     service: str
 ) -> pd.DataFrame | None:
     reservation_coverage_data = get_reservation_coverage_data(client, logger, service)
+    logger.debug("Reservation coverage data: %s", reservation_coverage_data)
 
     if reservation_coverage_data is None:
         return None
@@ -206,7 +214,10 @@ def get_reservation_coverage_df(
         return None
 
     raw_reservation_coverage_df = reservation_coverage_to_df(reservation_coverage_data)
+    logger.debug("Raw reservation coverage df: %s", raw_reservation_coverage_df)
+
     raw_total = reservation_coverage_data["CoveragesByTime"][0]["Total"]
+    logger.debug("Raw total: %s", raw_total)
     return format_reservation_coverage_df(raw_reservation_coverage_df, raw_total)
 
 
@@ -218,6 +229,8 @@ def get_reservation_coverage_df(
 def get_reservations_purchase_recommendations_info(
     client: CostExplorerClient, input: list[dict], logger: Logger
 ) -> list[dict] | None:
+    logger.info("Getting reservations purchase recommendations data")
+    logger.debur("RPR_CONFIG: %s", RPR_CONFIG)
     rprs = []
 
     for rpr_input in RPR_CONFIG:
@@ -225,6 +238,7 @@ def get_reservations_purchase_recommendations_info(
             rpr = client.get_reservation_purchase_recommendation(**rpr_input)[  # type: ignore
                 "Recommendations"
             ]
+            logger.debug("Reservations purchase recomendation raw data: %s", rpr)
         except client.exceptions.DataUnavailableException:
             logger.info(
                 "Purchase recommendations data is unavailable for %s", rpr_input
@@ -295,6 +309,7 @@ def get_reservations_dataframes(
     org_client
 ) -> list[dict] | None:
     if GET_RESERVED_INSTANCES_INFO:
+        logger.info("Getting reservations dataframes")
         reservations_utilization_df = get_reservations_utilization_df(
             ce_client,
             logger,
@@ -315,8 +330,10 @@ def get_reservations_dataframes(
         ]
         if reservations_utilization_df is not None:
             for s in LIST_OF_SERVICES_FOR_RESERVATIONS_COVERAGE:
+                logger.info("Getting reservation coverage for %s", s)
                 df = get_reservation_coverage_df(ce_client, logger, s)
                 if df is not None:
                     result.append({"Title": f"{s} Reservation coverage", "Dataframe": df})
         
         return result
+    logger.info("Getting reservations dataframes is disabled")

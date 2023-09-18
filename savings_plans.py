@@ -19,12 +19,13 @@ from config import (
 def get_savings_plans_utilization_details(
     client: CostExplorerClient, logger: Logger
 ) -> dict | None:
+    logger.info("Getting Savings Plans utilization data for time period from: %s to: %s", FIRST_DAY_PREV_MONTH, FIRST_DAY_THIS_MONTH)
     try:
         return client.get_savings_plans_utilization_details(
             TimePeriod={"Start": FIRST_DAY_PREV_MONTH, "End": FIRST_DAY_THIS_MONTH},
         )  # type: ignore
     except client.exceptions.DataUnavailableException as e:
-        logger.info("Savings Plans utilization data is not available. %s", e)
+        logger.info("There is no Savings Plans utilization info for time period from: %s to: %s", FIRST_DAY_PREV_MONTH, FIRST_DAY_THIS_MONTH)
         return None
     except Exception as e:
         logger.warning("Failed to get Savings Plans utilization data. %s", e)
@@ -37,6 +38,7 @@ def get_savings_plans_utilization_df(
     org_client
 ) -> pd.DataFrame | None:
     details = get_savings_plans_utilization_details(client, logger)
+    logger.debug("Savings plans utilization details: %s", details)
 
     if details is None:
         return None
@@ -45,6 +47,7 @@ def get_savings_plans_utilization_df(
         details["SavingsPlansUtilizationDetails"],
         org_client
     )
+    logger.debug("Raw utilization df: %s", raw_utilization_df)
 
     raw_total_utilization = details["Total"]
     return format_savings_plans_utilizations(
@@ -102,6 +105,7 @@ def get_savings_plans_coverage_info(
     client: CostExplorerClient,
     logger: Logger,
 ) -> dict | None:
+    logger.info("Getting Savings Plans coverage data for time period from: %s to: %s", FIRST_DAY_PREV_MONTH, FIRST_DAY_THIS_MONTH)
     try:
         return client.get_savings_plans_coverage(
             TimePeriod={"Start": FIRST_DAY_PREV_MONTH, "End": FIRST_DAY_THIS_MONTH},
@@ -112,8 +116,9 @@ def get_savings_plans_coverage_info(
             ],  # type: ignore
             Granularity="MONTHLY",
         )
-    except client.exceptions.DataUnavailableException as e:
-        logger.info("Savings Plans utilization data is not available. %s", e)
+    except client.exceptions.DataUnavailableException:
+        logger.info("There is no Savings Plans coverage info for time period from: %s to: %s", FIRST_DAY_PREV_MONTH, FIRST_DAY_THIS_MONTH)
+
         return None
     except Exception as e:
         logger.warning("Failed to get Savings Plans utilization data. %s", e)
@@ -124,11 +129,13 @@ def get_savings_plans_coverage_df(
     client: CostExplorerClient, logger: Logger
 ) -> pd.DataFrame | None:
     coverage_info = get_savings_plans_coverage_info(client, logger)
+    logger.debug("Savings plans coverage info: %s", coverage_info)
 
     if coverage_info is None:
         return None
 
     raw_coverage_df = coverages_to_df(coverage_info["SavingsPlansCoverages"])
+    logger.debug("Raw coverage df: %s", raw_coverage_df)
     return format_savings_plans_coverage(raw_coverage_df)
 
 
@@ -167,12 +174,14 @@ def format_savings_plans_coverage(raw_df: pd.DataFrame) -> pd.DataFrame:
 def get_savings_plans_purchase_recommendations_info(
     c: CostExplorerClient, input: list[dict], logger: Logger
 ) -> list[dict]:
+    logger.info("Getting Savings Plans purchase recommendations")
     spprs = []
     for sppr_input in input:
         try:
             r = c.get_savings_plans_purchase_recommendation(**sppr_input)[
                 "SavingsPlansPurchaseRecommendation"
             ]
+            logger.debug("Savings plans purchase recomendation raw data: %s", r)
         except c.exceptions.DataUnavailableException:
             logger.info(
                 "Purchase recommendations data is unavailable for %s", sppr_input
@@ -239,6 +248,7 @@ def get_savings_plans_dataframes(
     org_client
 ) -> dict[str, dict[str, pd.DataFrame | None]] | None:
     if GET_SAVINGS_PLANS_INFO:
+        logger.info("Getting Savings Plans dataframes")
         savings_plans_utilization_df = get_savings_plans_utilization_df(
             client,
             logger,
@@ -256,3 +266,4 @@ def get_savings_plans_dataframes(
                 ),
             }
         }
+    logger.info("Skipping Savings Plans dataframes")
