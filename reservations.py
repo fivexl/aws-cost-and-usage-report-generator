@@ -230,7 +230,7 @@ def get_reservations_purchase_recommendations_info(
     client: CostExplorerClient, input: list[dict], logger: Logger
 ) -> list[dict] | None:
     logger.info("Getting reservations purchase recommendations data")
-    logger.debur("RPR_CONFIG: %s", RPR_CONFIG)
+    logger.debug("RPR_CONFIG: %s", RPR_CONFIG)
     rprs = []
 
     for rpr_input in RPR_CONFIG:
