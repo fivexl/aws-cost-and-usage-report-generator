@@ -1,4 +1,5 @@
 from logging import Logger
+from typing import Union, Dict
 
 import pandas as pd
 from mypy_boto3_ce import CostExplorerClient
@@ -19,7 +20,7 @@ from config import (
 # Reservations Utilization
 def get_reservations_utilizations_data(
     client: CostExplorerClient, logger: Logger
-) -> dict | None:
+) -> Union[Dict, None]:
     logger.info("Getting reservations utilization data for time period from: %s to: %s")
     try:
         return client.get_reservation_utilization(
