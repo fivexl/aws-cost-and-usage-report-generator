@@ -47,4 +47,4 @@ See [example report](cost-and-usage-report-2021-08-05.xlsx) for more details
 
 ## Post review
 
-- Post review [url](https://github.com/fivexl/aws-cost-and-usage-report-generator/compare/review...main
+- Post review [url](https://github.com/fivexl/aws-cost-and-usage-report-generator/compare/review...main)
