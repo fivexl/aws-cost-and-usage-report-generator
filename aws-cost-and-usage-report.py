@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import argparse
+from typing import Optional
 import boto3
 import datetime
 import pandas
@@ -160,7 +161,7 @@ def get_cost_and_usage_report_per_service(top_five_services_by_max_diff, filter,
 
 def add_to_report(
         title: str,
-        df: pandas.DataFrame | None,
+        df: Optional[pandas.DataFrame],
         writer: pandas.ExcelWriter,
         worksheet: Worksheet,
         start_row: int,

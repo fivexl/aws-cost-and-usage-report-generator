@@ -1,4 +1,5 @@
 from logging import Logger
+from typing import Optional
 
 import pandas as pd
 from mypy_boto3_ce import CostExplorerClient
@@ -18,7 +19,7 @@ from config import (
 # Savings Plans Utilization
 def get_savings_plans_utilization_details(
     client: CostExplorerClient, logger: Logger
-) -> dict | None:
+) -> Optional[dict]:
     logger.info("Getting Savings Plans utilization data for time period from: %s to: %s", FIRST_DAY_PREV_MONTH, FIRST_DAY_THIS_MONTH)
     try:
         return client.get_savings_plans_utilization_details(
@@ -36,7 +37,7 @@ def get_savings_plans_utilization_df(
     client: CostExplorerClient,
     logger: Logger,
     org_client
-) -> pd.DataFrame | None:
+) -> Optional[pd.DataFrame]:
     details = get_savings_plans_utilization_details(client, logger)
     logger.debug("Savings plans utilization details: %s", details)
 
@@ -104,7 +105,7 @@ def format_savings_plans_utilizations(
 def get_savings_plans_coverage_info(
     client: CostExplorerClient,
     logger: Logger,
-) -> dict | None:
+) -> Optional[dict]:
     logger.info("Getting Savings Plans coverage data for time period from: %s to: %s", FIRST_DAY_PREV_MONTH, FIRST_DAY_THIS_MONTH)
     try:
         return client.get_savings_plans_coverage(
@@ -127,7 +128,7 @@ def get_savings_plans_coverage_info(
 
 def get_savings_plans_coverage_df(
     client: CostExplorerClient, logger: Logger
-) -> pd.DataFrame | None:
+) -> Optional[pd.DataFrame]:
     coverage_info = get_savings_plans_coverage_info(client, logger)
     logger.debug("Savings plans coverage info: %s", coverage_info)
 
@@ -201,7 +202,7 @@ def get_savings_plans_purchase_recommendations_info(
 def get_savings_plans_purchase_recommendations_df(
     client: CostExplorerClient,
     logger: Logger,
-) -> pd.DataFrame | None:
+) -> Optional[pd.DataFrame]:
     raw_spprs = get_savings_plans_purchase_recommendations_info(
         client, SP_CONFIG, logger
     )
@@ -214,7 +215,7 @@ def get_savings_plans_purchase_recommendations_df(
 
 def savings_plans_purchase_recommendations_to_dict(
     recommendations: dict,
-) -> dict | None:
+) -> Optional[dict]:
     if summary := recommendations.get("SavingsPlansPurchaseRecommendationSummary"):
         currency = summary.get("CurrencyCode")
         estimated_monthly_savings = summary.get("EstimatedMonthlySavingsAmount")
@@ -246,7 +247,7 @@ def get_savings_plans_dataframes(
     client: CostExplorerClient,
     logger: Logger,
     org_client
-) -> dict[str, dict[str, pd.DataFrame | None]] | None:
+) -> Optional[dict[str, dict[str, Optional[pd.DataFrame]]]]:
     if GET_SAVINGS_PLANS_INFO:
         logger.info("Getting Savings Plans dataframes")
         savings_plans_utilization_df = get_savings_plans_utilization_df(

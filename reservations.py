@@ -1,5 +1,5 @@
 from logging import Logger
-from typing import Union, Dict
+from typing import Optional, Union, Dict
 
 import pandas as pd
 from mypy_boto3_ce import CostExplorerClient
@@ -108,7 +108,7 @@ def get_reservations_utilization_df(
     client: CostExplorerClient,
     logger: Logger,
     org_client,
-) -> pd.DataFrame | None:
+) -> Optional[pd.DataFrame]:
     reservation_utilization_data = get_reservations_utilizations_data(client, logger)
     logger.debug("Reservation utilization data: %s", reservation_utilization_data)
 
@@ -136,7 +136,7 @@ def get_reservations_utilization_df(
 
 def get_reservation_coverage_data(
     client: CostExplorerClient, logger: Logger, service: str
-) -> dict | None:
+) -> Optional[dict]:
     logger.info("Getting reservation coverage data for %s to %s", FIRST_DAY_PREV_MONTH, FIRST_DAY_THIS_MONTH)
     try:
         return client.get_reservation_coverage(
@@ -204,7 +204,7 @@ def get_reservation_coverage_df(
     client: CostExplorerClient,
     logger: Logger,
     service: str
-) -> pd.DataFrame | None:
+) -> Optional[pd.DataFrame]:
     reservation_coverage_data = get_reservation_coverage_data(client, logger, service)
     logger.debug("Reservation coverage data: %s", reservation_coverage_data)
 
@@ -229,7 +229,7 @@ def get_reservation_coverage_df(
 
 def get_reservations_purchase_recommendations_info(
     client: CostExplorerClient, input: list[dict], logger: Logger
-) -> list[dict] | None:
+) -> Optional[list[dict]]:
     logger.info("Getting reservations purchase recommendations data")
     logger.debug("RPR_CONFIG: %s", RPR_CONFIG)
     rprs = []
@@ -263,7 +263,7 @@ def get_reservations_purchase_recommendations_info(
 
 def reservations_purchase_recomendations_to_dict(
     recomendation: dict, rpr_input
-) -> dict | None:
+) -> Optional[dict]:
     if summary := recomendation.get("RecommendationSummary"):
         currency = summary.get("CurrencyCode")
         estimated_monthly_savings = summary.get("TotalEstimatedMonthlySavingsAmount")
@@ -295,7 +295,7 @@ def format_reservations_purchase_recomendations_df(raw_df) -> pd.DataFrame:
 def get_reservations_purchase_recommendations_df(
     client: CostExplorerClient,
     logger: Logger,
-) -> pd.DataFrame | None:
+) -> Optional[pd.DataFrame]:
     raw_rpr = get_reservations_purchase_recommendations_info(client, RPR_CONFIG, logger)
 
     if not raw_rpr:
@@ -308,7 +308,7 @@ def get_reservations_dataframes(
     ce_client: CostExplorerClient,
     logger: Logger,
     org_client
-) -> list[dict] | None:
+) -> Optional[list[dict]]:
     if GET_RESERVED_INSTANCES_INFO:
         logger.info("Getting reservations dataframes")
         reservations_utilization_df = get_reservations_utilization_df(
