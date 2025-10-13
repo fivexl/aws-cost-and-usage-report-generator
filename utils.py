@@ -24,6 +24,18 @@ def days_until(date_str: str) -> str:
         return f"{diff_days} days"
 
 
+def format_expiration_date(date_str: str) -> str:
+    """Format ISO date string to human-readable format.
+    Date_str must be in the format of 2021-09-30T00:00:00.000Z
+    Returns date in format: YYYY-MM-DD
+    """
+    try:
+        date_object = datetime.strptime(date_str, "%Y-%m-%dT%H:%M:%S.%fZ")
+        return date_object.strftime("%Y-%m-%d")
+    except (ValueError, AttributeError):
+        return date_str
+
+
 _HUMANIZED_LOOKBACK_PERIOD_IN_DAYS = {
     "SEVEN_DAYS": "7 days",
     "SIXTY_DAYS": "60 days",
