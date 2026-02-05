@@ -16,9 +16,9 @@ Output file is optimized for the workflow above.
 > bash setup.sh
 ....
 
-> source env/bin/activate
+> source .venv/bin/activate
 
-> python3 aws-cost-and-usage-report.py -h
+> uv run aws-cost-and-usage-report.py -h
 usage: aws-cost-and-usage-report.py [-h] [--sensetivity SENSETIVITY] [--out OUT] [--debug]
 
 Generate cost and usage report for the last 3 month grouped by service

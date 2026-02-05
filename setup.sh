@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 
 [ -d env ] && rm -rf env
+[ -d .venv ] && rm -rf .venv
 
-python3 -m venv env
-source env/bin/activate
-pip install -r requirements.txt
+uv venv
+source .venv/bin/activate
+uv pip install -r requirements.txt

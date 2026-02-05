@@ -115,7 +115,7 @@ def ce_response_to_dataframe(input):
     for column in df.columns:
         row_with_total.append(df[column].sum())
     row_wiht_total_series = pandas.Series(row_with_total, index = df.columns, name='Total Cost')
-    df = df.append(row_wiht_total_series)
+    df = pandas.concat([df, row_wiht_total_series.to_frame().T])
 
     # Sort data frame
     df.sort_values(by=df.columns[-1], ascending=False, inplace=True)
