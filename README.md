@@ -4,6 +4,13 @@
 
 Python script to generate montly AWS cost and usage report break down
 
+## Requierments 
+
+UV 
+```
+curl -LsSf https://astral.sh/uv/install.sh | sh
+```
+
 ## Usage
 
 Script will generate montly unblended cost report for the last 3 month as well will calculate normalized daily cost.
