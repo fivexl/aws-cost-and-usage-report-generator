@@ -137,9 +137,9 @@ def ce_response_to_dataframe(input):
     return final_df
 
 
-def get_cost_and_usage_report_per_service(top_five_services_by_max_diff, filter, metrics):
-    top_five_services_df = {}
-    for service_name in top_five_services_by_max_diff:
+def get_cost_and_usage_report_per_service(top_n_services_by_max_diff, filter, metrics):
+    top_n_services_df = {}
+    for service_name in top_n_services_by_max_diff:
         service_filter = copy.deepcopy(filter)
         service_filter['And'].append(
             {
@@ -150,13 +150,13 @@ def get_cost_and_usage_report_per_service(top_five_services_by_max_diff, filter,
             }
         )
         result = get_cost_and_usage(start, end, group_by=[{'Type': 'DIMENSION', 'Key': 'USAGE_TYPE', }], Filter=service_filter, metrics=metrics)
-        top_five_df = ce_response_to_dataframe(result)
-        top_five_df.sort_values(df.columns.tolist(), ascending=False, inplace=True)
-        top_five_services_df[service_name] = {
-            'df': top_five_df.copy(),
+        top_n_df = ce_response_to_dataframe(result)
+        top_n_df.sort_values(df.columns.tolist(), ascending=False, inplace=True)
+        top_n_services_df[service_name] = {
+            'df': top_n_df.copy(),
             'diff': df.loc[service_name][last_month_norm_column_name] - df.loc[service_name][month_before_last_norm_column_name]
             }
-    return top_five_services_df
+    return top_n_services_df
 
 
 def add_to_report(
@@ -217,6 +217,91 @@ def add_reservations_info_to_report(
     return start_row
 
 
+def generate_llm_todo_list(
+        top_services_by_max_diff: list,
+        top_services_df: dict,
+        df: pandas.DataFrame,
+        output_file: str,
+        last_month_norm_column_name: str,
+        month_before_last_norm_column_name: str,
+        start_date: datetime.date,
+        end_date: datetime.date
+) -> None:
+    """Generate a plain text todo list for LLM research based on highest spend increases."""
+    
+    # Extract the actual month dates from the column names
+    # Column names are like 'n 2025-10-01'
+    last_month_date = last_month_norm_column_name.replace('n ', '')
+    month_before_last_date = month_before_last_norm_column_name.replace('n ', '')
+    
+    with open(output_file, 'w') as f:
+        # Header
+        f.write("AWS Cost Research Todo List\n")
+        f.write("=" * 80 + "\n")
+        f.write(f"Generated: {datetime.date.today()}\n")
+        f.write(f"Overall Analysis Period: {start_date} to {end_date}\n")
+        f.write(f"Comparison Period: {month_before_last_date} vs {last_month_date}\n")
+        f.write(f"Analysis based on normalized daily costs\n\n")
+        
+        f.write("Services to Research (ordered by highest spend increase):\n")
+        f.write("=" * 80 + "\n\n")
+        
+        # Iterate through top services
+        for idx, service_name in enumerate(top_services_by_max_diff, 1):
+            service_info = top_services_df[service_name]
+            current_cost = df.loc[service_name][last_month_norm_column_name]
+            previous_cost = df.loc[service_name][month_before_last_norm_column_name]
+            cost_diff = service_info['diff']
+            
+            # Calculate percentage increase
+            if previous_cost > 0:
+                percent_increase = (cost_diff / previous_cost) * 100
+            else:
+                percent_increase = 100 if cost_diff > 0 else 0
+            
+            # Write service header
+            f.write(f"{idx}. {service_name}\n")
+            f.write("-" * 80 + "\n")
+            
+            # Write cost details with explicit dates
+            f.write(f"   Current normalized daily cost ({last_month_date}): ${current_cost:.2f}\n")
+            f.write(f"   Previous normalized daily cost ({month_before_last_date}): ${previous_cost:.2f}\n")
+            f.write(f"   Daily cost increase: ${cost_diff:.2f} ({percent_increase:+.1f}%)\n\n")
+            
+            # Write top usage types
+            service_df = service_info['df']
+            # Get the last month column (excluding normalized columns and separator)
+            last_month_col = service_df.columns[2]  # Third column is the last month
+            
+            # Get top 10 usage types by cost in the last month
+            top_usage_types = service_df.nlargest(10, last_month_col)
+            
+            if len(top_usage_types) > 0:
+                f.write("   Top usage types contributing to cost:\n")
+                for usage_idx, (usage_type, row) in enumerate(top_usage_types.iterrows(), 1):
+                    if usage_type == 'Total Cost':
+                        continue
+                    usage_cost = row[last_month_col]
+                    if usage_cost > 0:
+                        f.write(f"     {usage_idx}. {usage_type}: ${usage_cost:.2f}\n")
+                f.write("\n")
+            
+            # Write research tasks
+            f.write("   Research tasks:\n")
+            f.write("     * Investigate what changed in usage patterns between the two periods\n")
+            f.write("     * Check for any new deployments, scaling events, or configuration changes\n")
+            f.write("     * Review if this increase is expected (e.g., planned growth) or anomalous\n")
+            f.write("     * Identify opportunities for cost optimization (rightsizing, reserved capacity, etc.)\n")
+            f.write("     * Verify that usage aligns with business requirements and expected workload\n")
+            f.write("\n\n")
+        
+        # Footer
+        f.write("=" * 80 + "\n")
+        f.write("End of Research Todo List\n")
+    
+    logger.info(f'Todo list for LLM research written to {output_file}')
+
+
 parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter,
                                  description="Generate cost and usage report for the last 3 month grouped by service")
 # pass sensitivity
@@ -225,6 +310,8 @@ parser.add_argument('--out', type=str, default=f'cost-and-usage-report-{datetime
 parser.add_argument('--debug', action="store_true", help="Print debug info")
 parser.add_argument('--exclude_credit', action="store_true", default=True, help="Exclude credit from the report")
 parser.add_argument('--exclude_refunds', action="store_true", default=True, help="Exclude refunds from the report")
+parser.add_argument('--top_n', type=int, default=10, help="Number of top services by spend increase to analyze")
+parser.add_argument('--todo_output', type=str, default=f'cost-research-todos-{datetime.date.today()}.txt', help="Output file name for LLM research todo list")
 args = parser.parse_args()
 
 if args.debug:
@@ -260,16 +347,28 @@ df = ce_response_to_dataframe(results)
 
 logger.debug(f'Results converted to data frame:\n{df}\n')
 
-logger.info('Calculating services with most differences and getting usage type break down for the top 5')
+logger.info(f'Calculating services with most differences and getting usage type break down for the top {args.top_n}')
 num_of_col = len(df.columns)
 last_month_norm_column_name = df.columns[num_of_col - 1]
 month_before_last_norm_column_name = df.columns[num_of_col - 2]
 # This one get diff between last column and one before last and then returns indexes of rows with the max diff
 rows_sorted_by_max_diff = (df[last_month_norm_column_name] - df[month_before_last_norm_column_name]).sort_values(ascending=False).index.values.tolist()
-# Have to remove 'Total cost' row otherwise it will be always in the top 5
+# Have to remove 'Total cost' row otherwise it will be always in the top N
 rows_sorted_by_max_diff.remove('Total Cost')
-top_five_services_by_max_diff = rows_sorted_by_max_diff[0:5]
-top_five_services_df = get_cost_and_usage_report_per_service(top_five_services_by_max_diff, filter, metrics=metrics)
+top_n_services_by_max_diff = rows_sorted_by_max_diff[0:args.top_n]
+top_n_services_df = get_cost_and_usage_report_per_service(top_n_services_by_max_diff, filter, metrics=metrics)
+
+# Generate LLM research todo list
+generate_llm_todo_list(
+    top_services_by_max_diff=top_n_services_by_max_diff,
+    top_services_df=top_n_services_df,
+    df=df,
+    output_file=args.todo_output,
+    last_month_norm_column_name=last_month_norm_column_name,
+    month_before_last_norm_column_name=month_before_last_norm_column_name,
+    start_date=start,
+    end_date=end
+)
 
 # Get break down by account
 logger.info('Preparing report grouped per account')
@@ -346,20 +445,20 @@ with pandas.ExcelWriter(report_file_name, engine='xlsxwriter') as writer:
     )
     row_counter += len(df_per_account.index.values.tolist()) + 2
 
-    # Write top 5 services
-    worksheet.write('A' + str(row_counter), 'Top 5 services break down by usage type')
-    worksheet.merge_range(f'A{row_counter}:H{row_counter}', 'Top 5 services break down by usage type')
+    # Write top N services
+    worksheet.write('A' + str(row_counter), f'Top {args.top_n} services break down by usage type')
+    worksheet.merge_range(f'A{row_counter}:H{row_counter}', f'Top {args.top_n} services break down by usage type')
     row_counter += 1
 
-    for service in top_five_services_by_max_diff:
+    for service in top_n_services_by_max_diff:
         worksheet.merge_range(f'A{row_counter}:H{row_counter}', 
-                     f'{service}. diff compared to prev month: {top_five_services_df[service]["diff"]:.2f}')
-        top_five_services_df[service]['df'].to_excel(writer,
+                     f'{service}. diff compared to prev month: {top_n_services_df[service]["diff"]:.2f}')
+        top_n_services_df[service]['df'].to_excel(writer,
                                                 sheet_name=worksheet_name,
                                                 startrow=row_counter,
                                                 startcol=0,
                                                 index=True)
-        row_counter = row_counter + len(top_five_services_df[service]['df'].index.values.tolist()) + 3
+        row_counter = row_counter + len(top_n_services_df[service]['df'].index.values.tolist()) + 3
 
     # Write Savings Plans info
     row_counter = add_savings_plans_info_to_report(
@@ -398,7 +497,7 @@ with pandas.ExcelWriter(report_file_name, engine='xlsxwriter') as writer:
     worksheet.set_column(4, 4, 5)
     # Set width and format of columns for suggestion and comments to 30
     worksheet.set_column(8, 9, 30, text_column_format)
-    worksheet.merge_range(0, 0, 0, 9, 'Generated using https://github.com/fivexl/aws-cost-and-usage-report-generator', merged_cell_format)
+    worksheet.merge_range(0, 0, 0, 9, 'Generated using https://github.com/fivexl/aws-cost-and-usage-report', merged_cell_format)
     worksheet.merge_range(1, 0, 1, 9, f'Generated by {user_id} for account {account_id} on {datetime.date.today()}', merged_cell_format)
     worksheet.merge_range(5, 0, 5, 3, 'Montly unblended cost per service', merged_cell_format)
     worksheet.merge_range(5, 5, 5, 7, 'Normalized values by number of days in the given month', merged_cell_format)
