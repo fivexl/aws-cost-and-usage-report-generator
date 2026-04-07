@@ -1,5 +1,4 @@
 from logging import Logger
-from typing import Optional
 
 import pandas as pd
 from mypy_boto3_ce import CostExplorerClient
@@ -19,7 +18,7 @@ from config import (
 # Savings Plans Utilization
 def get_savings_plans_utilization_details(
     client: CostExplorerClient, logger: Logger
-) -> Optional[dict]:
+) -> dict:
     logger.info("Getting Savings Plans utilization data for time period from: %s to: %s", FIRST_DAY_PREV_MONTH, FIRST_DAY_THIS_MONTH)
     try:
         return client.get_savings_plans_utilization_details(
@@ -37,7 +36,7 @@ def get_savings_plans_utilization_df(
     client: CostExplorerClient,
     logger: Logger,
     org_client
-) -> Optional[pd.DataFrame]:
+) -> pd.DataFrame:
     details = get_savings_plans_utilization_details(client, logger)
     logger.debug("Savings plans utilization details: %s", details)
 
@@ -46,7 +45,8 @@ def get_savings_plans_utilization_df(
 
     raw_utilization_df = utilization_details_to_df(
         details["SavingsPlansUtilizationDetails"],
-        org_client
+        org_client,
+        logger
     )
     logger.debug("Raw utilization df: %s", raw_utilization_df)
 
@@ -56,46 +56,108 @@ def get_savings_plans_utilization_df(
     )
 
 
-def utilization_details_to_df(sp_info: dict, org_client) -> pd.DataFrame:
-    data = [
-        {
+def utilization_details_to_df(sp_info: dict, org_client, logger: Logger = None) -> pd.DataFrame:
+    data = []
+    skipped_plans = []
+    
+    # Statuses that don't have utilization/savings data
+    INACTIVE_STATUSES = ["Returned", "PendingReturn"]
+    
+    for sp in sp_info:
+        status = sp.get("Attributes", {}).get("Status", "Unknown")
+        sp_id = sp.get("SavingsPlanArn", "Unknown").split("/")[-1]
+        
+        # Skip Savings Plans without utilization/savings data (e.g., returned plans)
+        if status in INACTIVE_STATUSES:
+            skipped_plans.append({
+                "id": sp_id,
+                "account": sp.get("Attributes", {}).get("AccountName", "Unknown"),
+                "type": sp.get("Attributes", {}).get("SavingsPlansType", "Unknown"),
+                "status": status,
+            })
+            continue
+        
+        # Also skip if Utilization or Savings data is empty (defensive check)
+        utilization_data = sp.get("Utilization", {})
+        savings_data = sp.get("Savings", {})
+        
+        if not utilization_data or not savings_data:
+            if logger:
+                logger.warning(
+                    f"Savings Plan {sp_id} has status '{status}' but missing utilization/savings data. Skipping."
+                )
+            skipped_plans.append({
+                "id": sp_id,
+                "account": sp.get("Attributes", {}).get("AccountName", "Unknown"),
+                "type": sp.get("Attributes", {}).get("SavingsPlansType", "Unknown"),
+                "status": status,
+            })
+            continue
+        
+        data.append({
             "SavingsPlanArn": sp["SavingsPlanArn"],
-            "Utilization": sp["Utilization"]["UtilizationPercentage"],
+            "Utilization": utilization_data.get("UtilizationPercentage", "0"),
+            "ExpirationDate": sp["Attributes"]["EndDateTime"],
             "EndDateTime": sp["Attributes"]["EndDateTime"],
             "Account": utils.get_account_info_by_account_name(
                 account_name = sp["Attributes"]["AccountName"],
                 org_client = org_client
             ),
             "Region": sp["Attributes"]["Region"],
-            "Savings": sp["Savings"]["NetSavings"],
+            "Savings": savings_data.get("NetSavings", "0"),
             "Type": sp["Attributes"]["SavingsPlansType"],
-        }
-        for sp in sp_info
-    ]
+        })
+    
+    # Log information about skipped plans
+    if skipped_plans and logger:
+        logger.info(f"Skipped {len(skipped_plans)} inactive Savings Plan(s): {skipped_plans}")
+    
     return pd.DataFrame(data)
 
 
 def format_savings_plans_utilizations(
     raw_df: pd.DataFrame, total: dict, MISSING_DATA_PLACEHOLDER
 ) -> pd.DataFrame:
+    # Handle case when all Savings Plans were skipped (empty DataFrame)
+    if raw_df.empty:
+        # Return DataFrame with only total row
+        total_row = {
+            "Id": "Total",
+            "Utilization": total.get("Utilization", {}).get("UtilizationPercentage", "0"),
+            "Savings": total.get("Savings", {}).get("NetSavings", "0"),
+            "ExpirationDate": MISSING_DATA_PLACEHOLDER,
+            "DaysUntilEnd": MISSING_DATA_PLACEHOLDER,
+            "Account": MISSING_DATA_PLACEHOLDER,
+            "Region": MISSING_DATA_PLACEHOLDER,
+            "Type": MISSING_DATA_PLACEHOLDER,
+        }
+        df = pd.DataFrame([total_row])
+        df["Utilization"] = utils.to_percentage(df["Utilization"])
+        df["Savings"] = utils.to_dollars(df["Savings"])
+        return df[
+            ["Id", "Utilization", "Savings", "ExpirationDate", "DaysUntilEnd", "Account", "Region", "Type"]
+        ]
+    
     df = raw_df.copy()
 
+    df["ExpirationDate"] = df["ExpirationDate"].apply(utils.format_expiration_date)
     df["DaysUntilEnd"] = df["EndDateTime"].apply(utils.days_until)
     df["Id"] = df["SavingsPlanArn"].apply(lambda x: x.split("/")[-1])
     total_row = {
         "Id": "Total",
-        "Utilization": total["Utilization"]["UtilizationPercentage"],
+        "Utilization": total.get("Utilization", {}).get("UtilizationPercentage", "0"),
+        "ExpirationDate": MISSING_DATA_PLACEHOLDER,
         "DaysUntilEnd": MISSING_DATA_PLACEHOLDER,
         "Account": MISSING_DATA_PLACEHOLDER,
         "Region": MISSING_DATA_PLACEHOLDER,
-        "Savings": total["Savings"]["NetSavings"],
+        "Savings": total.get("Savings", {}).get("NetSavings", "0"),
         "Type": MISSING_DATA_PLACEHOLDER,
     }
     df.loc[len(df.index)] = total_row  # type: ignore
     df["Utilization"] = utils.to_percentage(df["Utilization"])
     df["Savings"] = utils.to_dollars(df["Savings"])
     return df[
-        ["Id", "Utilization", "Savings", "DaysUntilEnd", "Account", "Region", "Type"]
+        ["Id", "Utilization", "Savings", "ExpirationDate", "DaysUntilEnd", "Account", "Region", "Type"]
     ]
 
 
@@ -105,7 +167,7 @@ def format_savings_plans_utilizations(
 def get_savings_plans_coverage_info(
     client: CostExplorerClient,
     logger: Logger,
-) -> Optional[dict]:
+) -> dict:
     logger.info("Getting Savings Plans coverage data for time period from: %s to: %s", FIRST_DAY_PREV_MONTH, FIRST_DAY_THIS_MONTH)
     try:
         return client.get_savings_plans_coverage(
@@ -128,7 +190,7 @@ def get_savings_plans_coverage_info(
 
 def get_savings_plans_coverage_df(
     client: CostExplorerClient, logger: Logger
-) -> Optional[pd.DataFrame]:
+) -> pd.DataFrame:
     coverage_info = get_savings_plans_coverage_info(client, logger)
     logger.debug("Savings plans coverage info: %s", coverage_info)
 
@@ -202,7 +264,7 @@ def get_savings_plans_purchase_recommendations_info(
 def get_savings_plans_purchase_recommendations_df(
     client: CostExplorerClient,
     logger: Logger,
-) -> Optional[pd.DataFrame]:
+) -> pd.DataFrame:
     raw_spprs = get_savings_plans_purchase_recommendations_info(
         client, SP_CONFIG, logger
     )
@@ -215,7 +277,7 @@ def get_savings_plans_purchase_recommendations_df(
 
 def savings_plans_purchase_recommendations_to_dict(
     recommendations: dict,
-) -> Optional[dict]:
+) -> dict:
     if summary := recommendations.get("SavingsPlansPurchaseRecommendationSummary"):
         currency = summary.get("CurrencyCode")
         estimated_monthly_savings = summary.get("EstimatedMonthlySavingsAmount")
@@ -247,7 +309,7 @@ def get_savings_plans_dataframes(
     client: CostExplorerClient,
     logger: Logger,
     org_client
-) -> Optional[dict[str, dict[str, Optional[pd.DataFrame]]]]:
+) -> dict[str, dict[str, pd.DataFrame]]:
     if GET_SAVINGS_PLANS_INFO:
         logger.info("Getting Savings Plans dataframes")
         savings_plans_utilization_df = get_savings_plans_utilization_df(
