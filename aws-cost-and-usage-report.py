@@ -130,7 +130,8 @@ def ce_response_to_dataframe(input):
 
     # Insert separator between regular columns and normalized columns so it is easier
     # to write to file later on
-    final_df.insert(3,'---','')
+    num_regular_columns = len(df.columns)
+    final_df.insert(num_regular_columns, '---', '')
 
     logger.debug(f'Data frame with normalized data:\n{final_df}\n')
 
@@ -303,8 +304,9 @@ def generate_llm_todo_list(
 
 
 parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter,
-                                 description="Generate cost and usage report for the last 3 month grouped by service")
+                                 description="Generate cost and usage report for the last N months grouped by service")
 # pass sensitivity
+parser.add_argument('--months', type=int, default=3, help="Number of months to include in the report (will use maximum available if requested months exceed available data)")
 parser.add_argument('--sensitivity', type=float, default=0.1, help="Sensitivity of cost change formatting")
 parser.add_argument('--out', type=str, default=f'cost-and-usage-report-{datetime.date.today()}.xlsx', help="Output file name")
 parser.add_argument('--debug', action="store_true", help="Print debug info")
@@ -319,8 +321,12 @@ if args.debug:
 
 report_file_name = args.out
 sensitivity = args.sensitivity
-# 1st day of month 3 months ago
-start = (datetime.date.today() - relativedelta(months=+3)).replace(day=1)
+num_months = args.months
+if num_months < 1:
+    logger.error('Number of months must be at least 1')
+    raise SystemExit(1)
+# 1st day of month N months ago
+start = (datetime.date.today() - relativedelta(months=+num_months)).replace(day=1)
 # the first day of the current month
 end = datetime.date.today().replace(day=1)
 filter = {"And": []}
@@ -332,12 +338,17 @@ metrics=['UnblendedCost']
 account_id = sts.get_caller_identity().get('Account')
 user_id = sts.get_caller_identity().get('Arn').split(':')[-1]
 
-logger.info(f'Getting montly cost and usage report from {start} to {end}')
+logger.info(f'Getting monthly cost and usage report from {start} to {end} ({num_months} months requested)')
 logger.info(f'Cost change sensitivity is set to {sensitivity}')
 logger.info(f'Exclude credit {args.exclude_credit}')
 logger.info(f'Exclude refunds {args.exclude_refunds}')
 
 results = get_cost_and_usage(start, end, Filter=filter, metrics=metrics)
+
+# If fewer months were returned than requested, log a warning
+actual_months = len(results)
+if actual_months < num_months:
+    logger.warning(f'Requested {num_months} months but only {actual_months} months of data available. Using maximum available.')
 
 logger.debug(f'Response:\n{results}')
 
@@ -408,14 +419,24 @@ logger.info(f'Writing repot to {report_file_name}')
 if os.path.isfile(report_file_name):
     os.remove(report_file_name)
 
+def col_num_to_excel_letter(col_num):
+    """Convert a 1-based column number to Excel column letter (1=A, 26=Z, 27=AA, etc.)."""
+    result = ''
+    while col_num > 0:
+        col_num, remainder = divmod(col_num - 1, 26)
+        result = chr(65 + remainder) + result
+    return result
+
 worksheet_name = 'Cost and usage report'
 table_row_number = 6
 sensitivity_value_cell = '$B$3'
-normalized_cost_start_column_number = 5
-normalized_cost_start_column_letter = chr(ord('@') + normalized_cost_start_column_number)
-normalized_cost_end_column_letter = chr(ord('@') + len(df.columns) + 1)
-comments_column_letter = chr(ord('@') + len(df.columns) + 2)
-suggestions_column_letter = chr(ord('@') + len(df.columns) + 3)
+num_data_columns = len(df.columns)  # includes monthly costs + separator + normalized costs
+num_monthly_columns = (num_data_columns - 1) // 2  # subtract separator, divide by 2 (monthly + normalized)
+normalized_cost_start_column_number = num_monthly_columns + 2  # +1 for index col, +1 for separator
+normalized_cost_start_column_letter = col_num_to_excel_letter(normalized_cost_start_column_number)
+normalized_cost_end_column_letter = col_num_to_excel_letter(len(df.columns) + 1)
+comments_column_letter = col_num_to_excel_letter(len(df.columns) + 2)
+suggestions_column_letter = col_num_to_excel_letter(len(df.columns) + 3)
 # E0110: Abstract class 'ExcelWriter' with abstract methods instantiated (abstract-class-instantiated)
 # pylint: disable=E0110
 with pandas.ExcelWriter(report_file_name, engine='xlsxwriter') as writer:
@@ -488,19 +509,20 @@ with pandas.ExcelWriter(report_file_name, engine='xlsxwriter') as writer:
     text_column_format = workbook.add_format()
     text_column_format.set_text_wrap(True)
     text_column_format.set_align('left')
-    # Set width and format of services columnt
+    # Set width and format of services column
     worksheet.set_column(0, 0, 23, text_column_format)
-    # Set width of montly and daily cost columnts
-    worksheet.set_column(1, 7, 12)
-    # Set width of column that separates montly cost from daily cost to 5
-    # to leave more space for comments and suggestions
-    worksheet.set_column(4, 4, 5)
+    # Set width of monthly and daily cost columns
+    separator_col = num_monthly_columns + 1  # +1 for index column
+    last_data_col = len(df.columns)
+    worksheet.set_column(1, last_data_col, 12)
+    # Set width of column that separates monthly cost from daily cost to 5
+    worksheet.set_column(separator_col, separator_col, 5)
     # Set width and format of columns for suggestion and comments to 30
-    worksheet.set_column(8, 9, 30, text_column_format)
-    worksheet.merge_range(0, 0, 0, 9, 'Generated using https://github.com/fivexl/aws-cost-and-usage-report', merged_cell_format)
-    worksheet.merge_range(1, 0, 1, 9, f'Generated by {user_id} for account {account_id} on {datetime.date.today()}', merged_cell_format)
-    worksheet.merge_range(5, 0, 5, 3, 'Montly unblended cost per service', merged_cell_format)
-    worksheet.merge_range(5, 5, 5, 7, 'Normalized values by number of days in the given month', merged_cell_format)
+    worksheet.set_column(last_data_col + 1, last_data_col + 2, 30, text_column_format)
+    worksheet.merge_range(0, 0, 0, last_data_col + 2, 'Generated using https://github.com/fivexl/aws-cost-and-usage-report', merged_cell_format)
+    worksheet.merge_range(1, 0, 1, last_data_col + 2, f'Generated by {user_id} for account {account_id} on {datetime.date.today()}', merged_cell_format)
+    worksheet.merge_range(5, 0, 5, num_monthly_columns, 'Montly unblended cost per service', merged_cell_format)
+    worksheet.merge_range(5, separator_col + 1, 5, last_data_col, 'Normalized values by number of days in the given month', merged_cell_format)
     worksheet.set_row(5, 30)
     worksheet.write('A3', 'Sensitivity')
     worksheet.write(sensitivity_value_cell, sensitivity)
