@@ -56,6 +56,20 @@ optional arguments:
 # Last 12 months (or max available)
 > python3 aws-cost-and-usage-report.py --months 12
 ```
+
+### Download Invoice PDFs
+
+You can download invoice PDFs for each billing period scanned using the `--download_invoices` flag. This uses the AWS Invoicing API to fetch invoice IDs and download the corresponding PDF documents into an `invoices-<date>/` folder.
+
+```
+# Download invoices for the last 3 months (default)
+> python3 aws-cost-and-usage-report.py --download_invoices
+
+# Download invoices for the last 6 months
+> python3 aws-cost-and-usage-report.py --months 6 --download_invoices
+```
+
+Note: This requires the `invoicing:ListInvoiceSummaries` and `invoicing:GetInvoicePDF` IAM permissions.
 ## Example
 
 See [example report](cost-and-usage-report-2021-08-05.xlsx) for more details

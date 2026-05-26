@@ -9,6 +9,7 @@ import logging
 import os
 import copy
 import re
+import urllib.request
 
 
 from xlsxwriter.worksheet import Worksheet
@@ -314,6 +315,7 @@ parser.add_argument('--exclude_credit', action="store_true", default=True, help=
 parser.add_argument('--exclude_refunds', action="store_true", default=True, help="Exclude refunds from the report")
 parser.add_argument('--top_n', type=int, default=10, help="Number of top services by spend increase to analyze")
 parser.add_argument('--todo_output', type=str, default=f'cost-research-todos-{datetime.date.today()}.txt', help="Output file name for LLM research todo list")
+parser.add_argument('--download_invoices', action="store_true", default=False, help="Download invoice PDFs for each billing period scanned into an 'invoices' folder")
 args = parser.parse_args()
 
 if args.debug:
@@ -578,3 +580,85 @@ with pandas.ExcelWriter(report_file_name, engine='xlsxwriter') as writer:
     )
 
 logger.info('Done')
+
+
+# Download invoices if requested
+if args.download_invoices:
+    logger.info('Downloading invoice PDFs...')
+    invoicing_client = boto3.client('invoicing', region_name='us-east-1')
+    invoices_dir = f'invoices-{datetime.date.today()}'
+    os.makedirs(invoices_dir, exist_ok=True)
+
+    # Iterate over each month in the scanned period
+    current_date = start
+    while current_date < end:
+        year = current_date.year
+        month = current_date.month
+        logger.info(f'Fetching invoices for {year}-{month:02d}...')
+
+        try:
+            # List invoice summaries for this billing period
+            invoice_summaries = []
+            next_token = None
+            while True:
+                params = {
+                    'Selector': {
+                        'ResourceType': 'ACCOUNT_ID',
+                        'Value': account_id
+                    },
+                    'Filter': {
+                        'BillingPeriod': {
+                            'Month': month,
+                            'Year': year
+                        }
+                    }
+                }
+                if next_token:
+                    params['NextToken'] = next_token
+
+                response = invoicing_client.list_invoice_summaries(**params)
+                invoice_summaries.extend(response.get('InvoiceSummaries', []))
+                next_token = response.get('NextToken')
+                if not next_token:
+                    break
+
+            if not invoice_summaries:
+                logger.info(f'  No invoices found for {year}-{month:02d}')
+            else:
+                logger.info(f'  Found {len(invoice_summaries)} invoice(s) for {year}-{month:02d}')
+
+            for invoice in invoice_summaries:
+                invoice_id = invoice['InvoiceId']
+                billing_period = f"{year}-{month:02d}"
+                try:
+                    pdf_response = invoicing_client.get_invoice_pdf(InvoiceId=invoice_id)
+                    invoice_pdf = pdf_response.get('InvoicePDF', {})
+                    document_url = invoice_pdf.get('DocumentUrl')
+
+                    if document_url:
+                        filename = f"{billing_period}_{invoice_id}.pdf"
+                        filepath = os.path.join(invoices_dir, filename)
+                        urllib.request.urlretrieve(document_url, filepath)
+                        logger.info(f'  Downloaded: {filename}')
+
+                    # Also download supplemental documents if any
+                    for supp_doc in invoice_pdf.get('SupplementalDocuments', []):
+                        supp_url = supp_doc.get('DocumentUrl')
+                        supp_type = supp_doc.get('DocumentType', 'SUPPLEMENT')
+                        supp_id = supp_doc.get('DocumentId', 'unknown')
+                        if supp_url:
+                            supp_filename = f"{billing_period}_{invoice_id}_{supp_type}_{supp_id}.pdf"
+                            supp_filepath = os.path.join(invoices_dir, supp_filename)
+                            urllib.request.urlretrieve(supp_url, supp_filepath)
+                            logger.info(f'  Downloaded supplemental: {supp_filename}')
+
+                except Exception as e:
+                    logger.warning(f'  Failed to download invoice {invoice_id}: {e}')
+
+        except Exception as e:
+            logger.warning(f'  Failed to list invoices for {year}-{month:02d}: {e}')
+
+        # Move to next month
+        current_date = (current_date + relativedelta(months=+1)).replace(day=1)
+
+    logger.info(f'Invoice PDFs saved to {invoices_dir}/')
