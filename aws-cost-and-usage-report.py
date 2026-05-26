@@ -639,7 +639,7 @@ if args.download_invoices:
                         filename = f"{billing_period}_{invoice_id}.pdf"
                         filepath = os.path.join(invoices_dir, filename)
                         urllib.request.urlretrieve(document_url, filepath)
-                        logger.info(f'  Downloaded: {filename}')
+                        logger.info(f'  Downloaded invoice for {month:02d}.{year}')
 
                     # Also download supplemental documents if any
                     for supp_doc in invoice_pdf.get('SupplementalDocuments', []):
@@ -650,7 +650,7 @@ if args.download_invoices:
                             supp_filename = f"{billing_period}_{invoice_id}_{supp_type}_{supp_id}.pdf"
                             supp_filepath = os.path.join(invoices_dir, supp_filename)
                             urllib.request.urlretrieve(supp_url, supp_filepath)
-                            logger.info(f'  Downloaded supplemental: {supp_filename}')
+                            logger.info(f'  Downloaded supplemental document for {month:02d}.{year}')
 
                 except Exception as e:
                     logger.warning(f'  Failed to download invoice {invoice_id}: {e}')
