@@ -13,8 +13,10 @@ curl -LsSf https://astral.sh/uv/install.sh | sh
 
 ## Usage
 
-Script will generate montly unblended cost report for the last 3 month as well will calculate normalized daily cost.
-Make sure to set AWS creds for the account for which you want to generate a report
+Script will generate monthly unblended cost report for a configurable number of months as well as calculate normalized daily cost.
+By default it fetches the last 3 months. You can specify a different number with the `--months` parameter — if the requested number exceeds available data, the script will use the maximum available.
+
+Make sure to set AWS creds for the account for which you want to generate a report.
 
 Take the output file, import it to Google Sheets, fill in comments and suggestions, export as pdf and share with the customer.
 Output file is optimized for the workflow above.
@@ -26,28 +28,48 @@ Output file is optimized for the workflow above.
 > source .venv/bin/activate
 
 > uv run aws-cost-and-usage-report.py -h
-usage: aws-cost-and-usage-report.py [-h] [--sensetivity SENSETIVITY] [--out OUT] [--debug]
+usage: aws-cost-and-usage-report.py [-h] [--months MONTHS] [--sensitivity SENSITIVITY] [--out OUT] [--debug]
+                                    [--exclude_credit] [--exclude_refunds] [--top_n TOP_N] [--todo_output TODO_OUTPUT]
 
-Generate cost and usage report for the last 3 month grouped by service
+Generate cost and usage report for the last N months grouped by service
 
 optional arguments:
   -h, --help            show this help message and exit
-  --sensetivity SENSETIVITY
-                        Sensetivity of cost change formatting (default: 0.1)
-  --out OUT             Output file name (default: cost-and-usage-report-2021-08-05.xlsx)
+  --months MONTHS       Number of months to include in the report (will use maximum available
+                        if requested months exceed available data) (default: 3)
+  --sensitivity SENSITIVITY
+                        Sensitivity of cost change formatting (default: 0.1)
+  --out OUT             Output file name (default: cost-and-usage-report-<today>.xlsx)
   --debug               Print debug info (default: False)
+  --exclude_credit      Exclude credit from the report (default: True)
+  --exclude_refunds     Exclude refunds from the report (default: True)
+  --top_n TOP_N         Number of top services by spend increase to analyze (default: 10)
+  --todo_output TODO_OUTPUT
+                        Output file name for LLM research todo list (default: cost-research-todos-<today>.txt)
 
-> python3 aws-cost-and-usage-report.py 
-INFO: Found credentials in environment variables.
-INFO: Getting montly cost and usage report from 2021-05-01 to 2021-08-01
-INFO: Cost change sensetivity is set to 0.1
-INFO: Found credentials in environment variables.
-INFO: Parsing report
-INFO: Calculating total cost per month
-INFO: Calculating normalized cost per month
-INFO: Writing repot to cost-and-usage-report-2021-08-05.xlsx
-INFO: Done
+# Default (last 3 months)
+> python3 aws-cost-and-usage-report.py
+
+# Last 6 months
+> python3 aws-cost-and-usage-report.py --months 6
+
+# Last 12 months (or max available)
+> python3 aws-cost-and-usage-report.py --months 12
 ```
+
+### Download Invoice PDFs
+
+You can download invoice PDFs for each billing period scanned using the `--download_invoices` flag. This uses the AWS Invoicing API to fetch invoice IDs and download the corresponding PDF documents into an `invoices-<date>/` folder.
+
+```
+# Download invoices for the last 3 months (default)
+> python3 aws-cost-and-usage-report.py --download_invoices
+
+# Download invoices for the last 6 months
+> python3 aws-cost-and-usage-report.py --months 6 --download_invoices
+```
+
+Note: This requires the `invoicing:ListInvoiceSummaries` and `invoicing:GetInvoicePDF` IAM permissions.
 ## Example
 
 See [example report](cost-and-usage-report-2021-08-05.xlsx) for more details
