@@ -1,7 +1,7 @@
 boto3==1.26.155
 boto3-stubs[ce]==1.26.155
 flake8==3.9.2
-pylint==2.9.6
+pylint==4.0.9
 pandas==2.2.0
 numpy==1.26.4
 xlsxwriter==1.4.5
